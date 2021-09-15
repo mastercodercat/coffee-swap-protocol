@@ -1,44 +1,32 @@
-use std::collections::HashMap;
+use cw_storage_plus::Map;
+use cosmwasm_std::Uint128;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use std::fmt;
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct CoffeeCup {
-    recipe: CoffeeRecipe,
-    volume: f32,
+    pub name: String,
+    pub recipe: CoffeeRecipe,
+    pub price: Uint128,
+    // volume: f32,
 }
 
-impl CoffeeRecipe {
-    fn to_string(&self) -> String {
-        // let mut recipe: String = !("name: {}", self.name);
-
-        let mut recipe: String;
-        for (name, relative_volume) in self.ingredients {
-            let str: String = format!("{}", relative_volume);
-            // recipe.insert_str(recipe.len()-1, )
-            // recipe.insert_str(recipe.len()-1, format!("{} of {}", relative_volume, name))
-        }
-        // for (key, value) in &*self.ingredients {
-
-        // }
-        // map.clear();
-    }
-
-    fn getRecipe(&self) -> String {
-
-    }
-}
-
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct CoffeeRecipe {
-    name: Coffee,
     // simplified example: Late { Water: 0.5, Milk: 0.3, Beans: 0.15, Sugar: 0.05 }
-    // todo: make water and beans required components
-    ingredients: HashMap<Ingredient, f32>,
+    // todo: make water and beans required components, add relative_volume
+    pub ingredients: Vec<Ingredient>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub enum Coffee {
     Cappuccino,
     Late,
     Americano,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub enum Ingredient {
     Sugar,
     Milk,
@@ -50,3 +38,22 @@ pub enum Ingredient {
     Liberica,
     Excelsa,
 }
+
+// impl PartialEq for Ingredient {
+//     fn eq(&self, other: &Ingredient) -> bool {
+//         self == other
+//     }
+// }
+
+// impl CoffeeRecipe {
+// fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//     write!(f, "{} of {}", self.relative_volume, self.name)
+// }
+// let mut recipe: String;
+// for (name, relative_volume) in self.ingredients {
+// let str: String = format!("{}", relative_volume);
+// recipe.insert_str(recipe.len()-1, format!("{} of {}", relative_volume, name))
+// }
+// return recipe;
+//     }
+// }

@@ -1,5 +1,6 @@
 [workspace]
-members = ["packages/*", "contracts/*"]
+members = ["contracts/*"]
+# members = ["packages/*", "contracts/*"]
 
 [profile.release.package.cw20-base]
 codegen-units = 1
