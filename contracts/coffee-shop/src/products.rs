@@ -2,7 +2,6 @@ use cosmwasm_std::Uint128;
 use cw_storage_plus::Map;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct CoffeeCup {
@@ -27,33 +26,20 @@ pub enum Coffee {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct IngredientPortion {
+    pub ingredient: Ingredient,
+    pub weight: Uint128,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub enum Ingredient {
     Sugar,
     Milk,
     Water,
-
+    Beans,
     // Coffee beans
-    Arabica,
-    Robusta,
-    Liberica,
-    Excelsa,
+    // Arabica,
+    // Robusta,
+    // Liberica,
+    // Excelsa,
 }
-
-// impl PartialEq for Ingredient {
-//     fn eq(&self, other: &Ingredient) -> bool {
-//         self == other
-//     }
-// }
-
-// impl CoffeeRecipe {
-// fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//     write!(f, "{} of {}", self.relative_volume, self.name)
-// }
-// let mut recipe: String;
-// for (name, relative_volume) in self.ingredients {
-// let str: String = format!("{}", relative_volume);
-// recipe.insert_str(recipe.len()-1, format!("{} of {}", relative_volume, name))
-// }
-// return recipe;
-//     }
-// }

@@ -9,11 +9,8 @@ use cw_storage_plus::Item;
 pub struct State {
     pub owner: Addr,
     pub balance: Uint128,
-    // pub contract_balance: &[Coin],
-    // pub minted_amount: Uint128,
-
-    // pub recipes: Vec<products::CoffeeRecipe>,
     pub menu: Vec<products::CoffeeCup>,
+    pub ingredient_portions: Vec<products::IngredientPortion>,
 }
 
 pub const STATE: Item<State> = Item::new("state");

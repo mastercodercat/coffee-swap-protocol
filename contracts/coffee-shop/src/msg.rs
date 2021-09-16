@@ -1,4 +1,4 @@
-use crate::products::CoffeeCup;
+use crate::products::{CoffeeCup, IngredientPortion};
 use cosmwasm_std::{Addr, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -45,8 +45,8 @@ pub struct MenuResponse {
     pub menu: Vec<CoffeeCup>,
 }
 
-// #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-// #[serde(rename_all = "snake_case")]
-// pub struct PriceResponse {
-//     pub price: Uint128,
-// }
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct IngredientsResponse {
+    pub ingredients: Vec<IngredientPortion>,
+}

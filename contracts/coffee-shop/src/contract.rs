@@ -1,19 +1,13 @@
-#[cfg(not(feature = "library"))]
-use cosmwasm_std::entry_point;
 // use cosmwasm_std::{
 //     coin, to_binary, Addr, BankMsg, Binary, Decimal, Deps, DepsMut, DistributionMsg, Env,
 //     MessageInfo, QuerierWrapper, Response, StakingMsg, StdError, StdResult, Uint128, WasmMsg,
 // };
+#[cfg(not(feature = "library"))]
+use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128,
 };
 use cw2::set_contract_version;
-
-use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg, MenuResponse, OwnerResponse, QueryMsg};
-use crate::products::{Coffee, CoffeeCup, CoffeeRecipe, Ingredient};
-use crate::state::{State, STATE};
-
 use cw20_base::allowances::{
     execute_burn_from, execute_decrease_allowance, execute_increase_allowance, execute_send_from,
     execute_transfer_from, query_allowance,
@@ -22,6 +16,12 @@ use cw20_base::contract::{
     execute_burn, execute_mint, execute_send, execute_transfer, query_balance, query_token_info,
 };
 use cw20_base::state::{MinterData, TokenInfo, TOKEN_INFO};
+
+use crate::error::ContractError;
+use crate::msg::{ExecuteMsg, QueryMsg, InstantiateMsg, MenuResponse, OwnerResponse, IngredientsResponse};
+use crate::products::{Coffee, CoffeeCup, CoffeeRecipe, Ingredient, IngredientPortion};
+use crate::state::{State, STATE};
+use std::ops::Add;
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:coffee-shop";
@@ -57,28 +57,52 @@ pub fn instantiate(
     let state = State {
         owner: info.sender.clone(),
         balance: Uint128::zero(),
-        // minted_amount: Uint128::zero(),
-
-        // recipes: vec![CoffeeRecipe {
-        //     ingredients: vec![
-        //         Ingredient::Arabica,
-        //         Ingredient::Water,
-        //         Ingredient::Milk,
-        //         Ingredient::Sugar,
-        //     ],
-        // }],
-        menu: vec![CoffeeCup {
-            name: String::from(CAPPUCCINO),
-            price: DEFAULT_PRICE,
-            recipe: CoffeeRecipe {
-                ingredients: vec![
-                    Ingredient::Arabica,
-                    Ingredient::Water,
-                    Ingredient::Milk,
-                    Ingredient::Sugar,
-                ],
+        ingredient_portions: vec![
+            IngredientPortion {
+                ingredient: Ingredient::Beans,
+                weight: Uint128::zero(),
             },
-        }],
+            IngredientPortion {
+                ingredient: Ingredient::Water,
+                weight: Uint128::zero(),
+            },
+            IngredientPortion {
+                ingredient: Ingredient::Milk,
+                weight: Uint128::zero(),
+            },
+            IngredientPortion {
+                ingredient: Ingredient::Sugar,
+                weight: Uint128::zero(),
+            },
+        ],
+        menu: vec![
+            CoffeeCup {
+                name: String::from(CAPPUCCINO),
+                price: DEFAULT_PRICE,
+                recipe: CoffeeRecipe {
+                    ingredients: vec![
+                        Ingredient::Beans,
+                        Ingredient::Water,
+                        Ingredient::Milk,
+                        Ingredient::Sugar,
+                    ],
+                },
+            },
+            CoffeeCup {
+                name: String::from(LATE),
+                price: DEFAULT_PRICE,
+                recipe: CoffeeRecipe {
+                    ingredients: vec![Ingredient::Beans, Ingredient::Water, Ingredient::Sugar],
+                },
+            },
+            CoffeeCup {
+                name: String::from(AMERICANO),
+                price: DEFAULT_PRICE,
+                recipe: CoffeeRecipe {
+                    ingredients: vec![Ingredient::Beans, Ingredient::Water],
+                },
+            },
+        ],
     };
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
@@ -133,32 +157,31 @@ pub fn set_price(
     Ok(Response::new().add_attribute("method", "set_price"))
 }
 
-//
-// pub fn try_increment(deps: DepsMut) -> Result<Response, ContractError> {
-//     STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
-//         state.count += 1;
-//         Ok(state)
-//     })?;
-//
-//     Ok(Response::new().add_attribute("method", "try_increment"))
-// }
-// pub fn try_reset(deps: DepsMut, info: MessageInfo, count: i32) -> Result<Response, ContractError> {
-//     STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
-//         if info.sender != state.owner {
-//             return Err(ContractError::Unauthorized {});
-//         }
-//         state.count = count;
-//         Ok(state)
-//     })?;
-//     Ok(Response::new().add_attribute("method", "reset"))
-// }
-//
-// #[cfg_attr(not(feature = "library"), entry_point)]
-// pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
-//     match msg {
-//         QueryMsg::GetCount {} => to_binary(&query_count(deps)?),
-//     }
-// }
+pub fn load_ingredients(
+    deps: DepsMut,
+    info: MessageInfo,
+    portions: Vec<IngredientPortion>,
+) -> Result<Response, ContractError> {
+    STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
+        if info.sender != state.owner {
+            return Err(ContractError::Unauthorized {});
+        }
+        // TODO: eliminate loading ing-s duplicates. Refactor with map probably
+        for portion in portions {
+            if portion.weight == Uint128::zero() {
+                return Err(ContractError::InvalidParam {});
+            }
+            for state_portion in state.ingredient_portions.iter_mut() {
+                if portion.ingredient == state_portion.ingredient {
+                    *state_portion.weight.add(portion.weight);
+                }
+            }
+        }
+        Ok(state)
+    })?;
+
+    Ok(Response::new().add_attribute("method", "set_price"))
+}
 
 fn query_owner(deps: Deps) -> StdResult<OwnerResponse> {
     let state = STATE.load(deps.storage)?;
@@ -169,19 +192,17 @@ fn get_owner(deps: Deps) -> Addr {
     query_owner(deps).unwrap().owner
 }
 
-// fn query_recipes(deps: Deps) -> StdResult<CoffeeListResponse> {
-//     let state = STATE.load(deps.storage)?;
-//     Ok(CoffeeListResponse {
-//         list: state.recipes,
-//     })
-// }
-
-// fn get_recipes(deps: Deps) -> Vec<CoffeeRecipe> {
-//     query_recipes(deps).unwrap().list
-// }
-
 fn get_balance<U: Into<String>>(deps: Deps, addr: U) -> Uint128 {
     query_balance(deps, addr.into()).unwrap().balance
+}
+
+fn query_ingredients(deps: Deps) -> StdResult<IngredientsResponse> {
+    let state = STATE.load(deps.storage)?;
+    Ok(IngredientsResponse { ingredients: state.ingredient_portions })
+}
+
+fn get_ingredients(deps: Deps) -> Vec<IngredientPortion> {
+    query_ingredients(deps).unwrap().ingredients
 }
 
 fn query_menu(deps: Deps) -> StdResult<MenuResponse> {
@@ -195,10 +216,9 @@ fn get_menu(deps: Deps) -> Vec<CoffeeCup> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use cosmwasm_std::from_binary;
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
-    // use cosmwasm_vm::testing::{mock_dependencies, mock_env, mock_info};
+
+    use super::*;
 
     #[test]
     fn proper_instantiation() {
@@ -220,14 +240,14 @@ mod tests {
         // owner
         assert_eq!(get_owner(deps.as_ref()), Addr::unchecked(creator));
         // menu
-        assert_eq!(get_menu(
-            deps.as_ref()),
+        assert_eq!(
+            get_menu(deps.as_ref()),
             vec![CoffeeCup {
                 name: String::from(CAPPUCCINO),
                 price: DEFAULT_PRICE,
                 recipe: CoffeeRecipe {
                     ingredients: vec![
-                        Ingredient::Arabica,
+                        Ingredient::Beans,
                         Ingredient::Water,
                         Ingredient::Milk,
                         Ingredient::Sugar,
@@ -248,12 +268,11 @@ mod tests {
             decimals: 0,
         };
         let info = mock_info(&creator, &[]);
-        // make sure we can instantiate with this
+
         let res = instantiate(deps.as_mut(), mock_env(), info, msg.clone()).unwrap();
         assert_eq!(0, res.messages.len());
 
         let zero_value = Uint128::zero();
-        let value = 1u8;
         let id = Uint128::from(1u8);
         let msg_zeros = ExecuteMsg::SetPrice {
             id: zero_value,
@@ -262,57 +281,25 @@ mod tests {
         let msg = ExecuteMsg::SetPrice { id: id, price: id };
         let info = mock_info(&creator, &[]);
 
-        let res = execute(deps.as_mut(), mock_env(), info, msg.clone()).unwrap();
+        execute(deps.as_mut(), mock_env(), info, msg.clone()).unwrap();
         let res = get_menu(deps.as_ref());
 
         assert_eq!(res[id.u128() as usize - 1].price, id);
+
+        // other cases
+        let info = mock_info(&creator, &[]);
+
+        execute(deps.as_mut(), mock_env(), info, msg_zeros.clone())
+            .expect_err("Must return InvalidParam error");
+        // match err {
+        //     Err(ContractError::InvalidParam {}) => {}
+        //     _ => panic!("Must return InvalidParam error"),
+        // }
+        // assert_eq!(
+        //     err,
+        //     ContractError::InvalidParam {});
+
+        let res = get_menu(deps.as_ref());
+        assert_ne!(res[zero_value.u128() as usize].price, zero_value);
     }
 }
-//
-//     #[test]
-//     fn increment() {
-//         let mut deps = mock_dependencies(&coins(2, "token"));
-//
-//         let msg = InstantiateMsg { count: 17 };
-//         let info = mock_info("creator", &coins(2, "token"));
-//         let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
-//
-//         // beneficiary can release it
-//         let info = mock_info("anyone", &coins(2, "token"));
-//         let msg = ExecuteMsg::Increment {};
-//         let _res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
-//
-//         // should increase counter by 1
-//         let res = query(deps.as_ref(), mock_env(), QueryMsg::GetCount {}).unwrap();
-//         let value: CountResponse = from_binary(&res).unwrap();
-//         assert_eq!(18, value.count);
-//     }
-//
-//     #[test]
-//     fn reset() {
-//         let mut deps = mock_dependencies(&coins(2, "token"));
-//
-//         let msg = InstantiateMsg { count: 17 };
-//         let info = mock_info("creator", &coins(2, "token"));
-//         let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
-//
-//         // beneficiary can release it
-//         let unauth_info = mock_info("anyone", &coins(2, "token"));
-//         let msg = ExecuteMsg::Reset { count: 5 };
-//         let res = execute(deps.as_mut(), mock_env(), unauth_info, msg);
-//         match res {
-//             Err(ContractError::Unauthorized {}) => {}
-//             _ => panic!("Must return unauthorized error"),
-//         }
-//
-//         // only the original creator can reset the counter
-//         let auth_info = mock_info("creator", &coins(2, "token"));
-//         let msg = ExecuteMsg::Reset { count: 5 };
-//         let _res = execute(deps.as_mut(), mock_env(), auth_info, msg).unwrap();
-//
-//         // should now be 5
-//         let res = query(deps.as_ref(), mock_env(), QueryMsg::GetCount {}).unwrap();
-//         let value: CountResponse = from_binary(&res).unwrap();
-//         assert_eq!(5, value.count);
-//     }
-// }
