@@ -10,8 +10,8 @@ use cosmwasm_std::{
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::msg::{MenuResponse, ExecuteMsg, InstantiateMsg, OwnerResponse, QueryMsg};
-use crate::products::{CoffeeRecipe, Ingredient, Coffee, CoffeeCup};
+use crate::msg::{ExecuteMsg, InstantiateMsg, MenuResponse, OwnerResponse, QueryMsg};
+use crate::products::{Coffee, CoffeeCup, CoffeeRecipe, Ingredient};
 use crate::state::{State, STATE};
 
 use cw20_base::allowances::{
@@ -41,7 +41,7 @@ pub fn instantiate(
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
     // store token info using cw20-base format
-    let data = TokenInfo {
+    let token_info = TokenInfo {
         name: msg.name,
         symbol: msg.symbol,
         decimals: msg.decimals,
@@ -52,12 +52,13 @@ pub fn instantiate(
             cap: None,
         }),
     };
-    TOKEN_INFO.save(deps.storage, &data)?;
+    TOKEN_INFO.save(deps.storage, &token_info)?;
 
     let state = State {
         owner: info.sender.clone(),
         balance: Uint128::zero(),
-        minted_amount: Uint128::zero(),
+        // minted_amount: Uint128::zero(),
+
         // recipes: vec![CoffeeRecipe {
         //     ingredients: vec![
         //         Ingredient::Arabica,
@@ -70,13 +71,13 @@ pub fn instantiate(
             name: String::from(CAPPUCCINO),
             price: DEFAULT_PRICE,
             recipe: CoffeeRecipe {
-                    ingredients: vec![
-                        Ingredient::Arabica,
-                        Ingredient::Water,
-                        Ingredient::Milk,
-                        Ingredient::Sugar,
-                    ],
-            }
+                ingredients: vec![
+                    Ingredient::Arabica,
+                    Ingredient::Water,
+                    Ingredient::Milk,
+                    Ingredient::Sugar,
+                ],
+            },
         }],
     };
 
@@ -100,22 +101,36 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     }
 }
 
-#[cfg(not(feature = "library"), entry_point)]
+#[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
-) {
+) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::SetPrice {id, price} => set_price(deps, id, price),
+        ExecuteMsg::SetPrice { id, price } => set_price(deps, info, id, price),
     }
 }
 
+pub fn set_price(
+    deps: DepsMut,
+    info: MessageInfo,
+    id: Uint128,
+    price: Uint128,
+) -> Result<Response, ContractError> {
+    STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
+        if info.sender != state.owner {
+            return Err(ContractError::Unauthorized {});
+        }
+        if id == Uint128::zero() || price == Uint128::zero() {
+            return Err(ContractError::InvalidParam {});
+        }
+        state.menu[id.u128() as usize - 1].price = price;
+        Ok(state)
+    })?;
 
-#[cfg(not(feature = "library"), entry_point)]
-pub fn set_price(deps: Deps, id: Uint128, price: Uint128) -> Result<Response, ContractError> {
-    
+    Ok(Response::new().add_attribute("method", "set_price"))
 }
 
 //
@@ -171,9 +186,7 @@ fn get_balance<U: Into<String>>(deps: Deps, addr: U) -> Uint128 {
 
 fn query_menu(deps: Deps) -> StdResult<MenuResponse> {
     let state = STATE.load(deps.storage)?;
-    Ok(MenuResponse {
-        menu: state.menu,
-    })
+    Ok(MenuResponse { menu: state.menu })
 }
 
 fn get_menu(deps: Deps) -> Vec<CoffeeCup> {
@@ -185,6 +198,7 @@ mod tests {
     use super::*;
     use cosmwasm_std::from_binary;
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+    // use cosmwasm_vm::testing::{mock_dependencies, mock_env, mock_info};
 
     #[test]
     fn proper_instantiation() {
@@ -205,10 +219,55 @@ mod tests {
         assert_eq!(get_balance(deps.as_ref(), &creator), Uint128::zero());
         // owner
         assert_eq!(get_owner(deps.as_ref()), Addr::unchecked(creator));
+        // menu
+        assert_eq!(get_menu(
+            deps.as_ref()),
+            vec![CoffeeCup {
+                name: String::from(CAPPUCCINO),
+                price: DEFAULT_PRICE,
+                recipe: CoffeeRecipe {
+                    ingredients: vec![
+                        Ingredient::Arabica,
+                        Ingredient::Water,
+                        Ingredient::Milk,
+                        Ingredient::Sugar,
+                    ],
+                },
+            }]
+        );
+    }
 
+    #[test]
+    fn set_price_test() {
+        let mut deps = mock_dependencies(&[]);
+        let creator = String::from("creeator");
+
+        let msg = InstantiateMsg {
+            name: "DRV Token".to_string(),
+            symbol: "DRV".to_string(),
+            decimals: 0,
+        };
+        let info = mock_info(&creator, &[]);
+        // make sure we can instantiate with this
+        let res = instantiate(deps.as_mut(), mock_env(), info, msg.clone()).unwrap();
+        assert_eq!(0, res.messages.len());
+
+        let zero_value = Uint128::zero();
+        let value = 1u8;
+        let id = Uint128::from(1u8);
+        let msg_zeros = ExecuteMsg::SetPrice {
+            id: zero_value,
+            price: zero_value,
+        };
+        let msg = ExecuteMsg::SetPrice { id: id, price: id };
+        let info = mock_info(&creator, &[]);
+
+        let res = execute(deps.as_mut(), mock_env(), info, msg.clone()).unwrap();
+        let res = get_menu(deps.as_ref());
+
+        assert_eq!(res[id.u128() as usize - 1].price, id);
     }
 }
-
 //
 //     #[test]
 //     fn increment() {

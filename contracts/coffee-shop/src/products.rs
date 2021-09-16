@@ -1,5 +1,5 @@
-use cw_storage_plus::Map;
 use cosmwasm_std::Uint128;
+use cw_storage_plus::Map;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt;

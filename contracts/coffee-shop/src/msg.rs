@@ -16,7 +16,7 @@ pub struct InstantiateMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
-    SetPrice {id: Uint128,price: Uint128},
+    SetPrice { id: Uint128, price: Uint128 },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -44,3 +44,9 @@ pub struct OwnerResponse {
 pub struct MenuResponse {
     pub menu: Vec<CoffeeCup>,
 }
+
+// #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+// #[serde(rename_all = "snake_case")]
+// pub struct PriceResponse {
+//     pub price: Uint128,
+// }
