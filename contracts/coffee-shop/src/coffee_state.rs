@@ -1,9 +1,12 @@
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use crate::products::{CoffeeCup, IngredientPortion};
 use cosmwasm_std::{Addr, Coin, Uint128};
 use cw_storage_plus::Map;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct CoffeeState {
+    // TODO: separate menu with inner recipes
     pub menu: Vec<CoffeeCup>,
     pub ingredient_portions: Vec<IngredientPortion>,
 }

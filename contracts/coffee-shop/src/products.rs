@@ -2,6 +2,7 @@ use cosmwasm_std::{Addr, StdResult, Uint128};
 use cw_storage_plus::Map;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::ops::{Add, Mul};
 
 // kilogrammes
 pub const WEIGHT_PRECISION: u128 = 3;
@@ -24,9 +25,9 @@ impl IngredientCupShare {
     }
 }
 
-pub fn check_loaded_ingredients_weight(
-    ingredients: Vec<IngredientCupShare>,
-    portions: Vec<IngredientPortion>,
+pub fn check_weight(
+    ingredients: &Vec<IngredientCupShare>,
+    portions: &Vec<IngredientPortion>,
     weight: Uint128,
 ) -> bool {
     for ingredient in ingredients.iter() {
@@ -34,7 +35,7 @@ pub fn check_loaded_ingredients_weight(
             if ingredient.ingredient_type != portion.ingredient {
                 continue;
             }
-            if portion.weight < order_total.mul(ingredient.share) {
+            if portion.weight < weight.mul(ingredient.share) {
                 return false;
             }
         }
