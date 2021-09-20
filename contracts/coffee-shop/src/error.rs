@@ -11,4 +11,7 @@ pub enum ContractError {
     // Add any other custom errors you like here.
     #[error("InvalidParam")]
     InvalidParam {},
+    // for internal usage only !
+    #[error("NotAnError")]
+    NotAnError {},
 }

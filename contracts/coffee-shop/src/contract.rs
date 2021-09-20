@@ -1,12 +1,10 @@
-// use cosmwasm_std::{
-//     coin, to_binary, Addr, BankMsg, Binary, Decimal, Deps, DepsMut, DistributionMsg, Env,
-//     MessageInfo, QuerierWrapper, Response, StakingMsg, StdError, StdResult, Uint128, WasmMsg,
-// };
-#[cfg(not(feature = "library"))]
-use cosmwasm_std::entry_point;
+use std::ops::{Add, Mul};
 use cosmwasm_std::{
     to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128,
 };
+
+#[cfg(not(feature = "library"))]
+use cosmwasm_std::entry_point;
 use cw2::set_contract_version;
 use cw20_base::allowances::{
     execute_burn_from, execute_decrease_allowance, execute_increase_allowance, execute_send_from,
@@ -18,10 +16,19 @@ use cw20_base::contract::{
 use cw20_base::state::{MinterData, TokenInfo, TOKEN_INFO};
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, QueryMsg, InstantiateMsg, MenuResponse, OwnerResponse, IngredientsResponse};
-use crate::products::{Coffee, CoffeeCup, CoffeeRecipe, Ingredient, IngredientPortion};
+use crate::error::ContractError::InvalidParam;
+
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+
+use crate::products;
+use crate::products::{
+    Coffee, CoffeeCup, CoffeeRecipe, Ingredient, IngredientPortion, AVERAGE_CUP_WEIGHT,
+    WEIGHT_PRECISION,
+};
+use crate::products::{IngredientCupShare, IngredientsResponse, MenuResponse, OwnerResponse};
+
 use crate::state::{State, STATE};
-use std::ops::Add;
+use crate::coffee_state::{CoffeeState, COFFEE_STATE};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:coffee-shop";
@@ -40,6 +47,9 @@ pub fn instantiate(
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
+    // Check valid token info
+    msg.validate()?;
+
     // store token info using cw20-base format
     let token_info = TokenInfo {
         name: msg.name,
@@ -51,12 +61,25 @@ pub fn instantiate(
             minter: _env.contract.address,
             cap: None,
         }),
+        // mint: match msg.mint {
+        //     Some(m) => Some(MinterData {
+        //         minter: deps.api.addr_validate(&m.minter)?,
+        //         cap: m.cap,
+        // }),
+        // None => None,
+        // };
     };
     TOKEN_INFO.save(deps.storage, &token_info)?;
 
     let state = State {
         owner: info.sender.clone(),
         balance: Uint128::zero(),
+    };
+
+    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
+    STATE.save(deps.storage, &state)?;
+
+    let coffee_state = CoffeeState {
         ingredient_portions: vec![
             IngredientPortion {
                 ingredient: Ingredient::Beans,
@@ -81,10 +104,22 @@ pub fn instantiate(
                 price: DEFAULT_PRICE,
                 recipe: CoffeeRecipe {
                     ingredients: vec![
-                        Ingredient::Beans,
-                        Ingredient::Water,
-                        Ingredient::Milk,
-                        Ingredient::Sugar,
+                        IngredientCupShare {
+                            ingredient_type: Ingredient::Water,
+                            share: Uint128::new(45),
+                        },
+                        IngredientCupShare {
+                            ingredient_type: Ingredient::Beans,
+                            share: Uint128::new(25),
+                        },
+                        IngredientCupShare {
+                            ingredient_type: Ingredient::Milk,
+                            share: Uint128::new(25),
+                        },
+                        IngredientCupShare {
+                            ingredient_type: Ingredient::Sugar,
+                            share: Uint128::new(5),
+                        },
                     ],
                 },
             },
@@ -92,21 +127,46 @@ pub fn instantiate(
                 name: String::from(LATE),
                 price: DEFAULT_PRICE,
                 recipe: CoffeeRecipe {
-                    ingredients: vec![Ingredient::Beans, Ingredient::Water, Ingredient::Sugar],
+                    ingredients: vec![
+                        IngredientCupShare {
+                            ingredient_type: Ingredient::Beans,
+                            share: Uint128::new(2),
+                        },
+                        IngredientCupShare {
+                            ingredient_type: Ingredient::Water,
+                            share: Uint128::new(45),
+                        },
+                        IngredientCupShare {
+                            ingredient_type: Ingredient::Beans,
+                            share: Uint128::new(25),
+                        },
+                    ],
                 },
             },
             CoffeeCup {
                 name: String::from(AMERICANO),
                 price: DEFAULT_PRICE,
                 recipe: CoffeeRecipe {
-                    ingredients: vec![Ingredient::Beans, Ingredient::Water],
+                    ingredients: vec![
+                        IngredientCupShare {
+                            ingredient_type: Ingredient::Water,
+                            share: Uint128::new(70),
+                        },
+                        IngredientCupShare {
+                            ingredient_type: Ingredient::Beans,
+                            share: Uint128::new(25),
+                        },
+                        IngredientCupShare {
+                            ingredient_type: Ingredient::Sugar,
+                            share: Uint128::new(5),
+                        },
+                    ],
                 },
             },
         ],
     };
 
-    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-    STATE.save(deps.storage, &state)?;
+    COFFEE_STATE.save(deps.storage, &coffee_state)?;
 
     Ok(Response::new()
         .add_attribute("method", "instantiate")
@@ -134,7 +194,42 @@ pub fn execute(
 ) -> Result<Response, ContractError> {
     match msg {
         ExecuteMsg::SetPrice { id, price } => set_price(deps, info, id, price),
+        ExecuteMsg::BuyCoffee { id, amount } => buy_coffee(deps, info, id, amount),
     }
+}
+
+pub fn buy_coffee(
+    deps: DepsMut,
+    info: MessageInfo,
+    id: Uint128,
+    amount: Uint128,
+) -> Result<Response, ContractError> {
+    COFFEE_STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
+        let index = id.u128() as usize;
+        // TODO: check wether menu, ingredients have already been init
+        if state.menu.len() > index {
+            return Err(ContractError::InvalidParam {});
+        }
+
+        let order_total = amount.mul(Uint128::new(AVERAGE_CUP_WEIGHT));
+
+        let err = products::check_loaded_ingredients_weight(
+            state.menu[index - 1].recipe.ingredients,
+            state.ingredient_portions,
+            order_total,
+        );
+
+        match weight {
+            // NotAnError {} => {}
+            InvalidParam {} => {
+                return Err(InvalidParam);
+            }
+        };
+
+        Ok(state)
+    })?;
+
+    Ok(Response::new().add_attribute("method", "buy_coffee"))
 }
 
 pub fn set_price(
@@ -143,13 +238,14 @@ pub fn set_price(
     id: Uint128,
     price: Uint128,
 ) -> Result<Response, ContractError> {
-    STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
+    COFFEE_STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
         if info.sender != state.owner {
             return Err(ContractError::Unauthorized {});
         }
         if id == Uint128::zero() || price == Uint128::zero() {
             return Err(ContractError::InvalidParam {});
         }
+        // TODO: check wether menu have already been init
         state.menu[id.u128() as usize - 1].price = price;
         Ok(state)
     })?;
@@ -162,7 +258,7 @@ pub fn load_ingredients(
     info: MessageInfo,
     portions: Vec<IngredientPortion>,
 ) -> Result<Response, ContractError> {
-    STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
+    COFFEE_STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
         if info.sender != state.owner {
             return Err(ContractError::Unauthorized {});
         }
@@ -173,7 +269,7 @@ pub fn load_ingredients(
             }
             for state_portion in state.ingredient_portions.iter_mut() {
                 if portion.ingredient == state_portion.ingredient {
-                    *state_portion.weight.add(portion.weight);
+                    state_portion.weight.add(portion.weight);
                 }
             }
         }
@@ -197,8 +293,10 @@ fn get_balance<U: Into<String>>(deps: Deps, addr: U) -> Uint128 {
 }
 
 fn query_ingredients(deps: Deps) -> StdResult<IngredientsResponse> {
-    let state = STATE.load(deps.storage)?;
-    Ok(IngredientsResponse { ingredients: state.ingredient_portions })
+    let state = COFFEE_STATE.load(deps.storage)?;
+    Ok(IngredientsResponse {
+        ingredients: state.ingredient_portions,
+    })
 }
 
 fn get_ingredients(deps: Deps) -> Vec<IngredientPortion> {
@@ -206,7 +304,7 @@ fn get_ingredients(deps: Deps) -> Vec<IngredientPortion> {
 }
 
 fn query_menu(deps: Deps) -> StdResult<MenuResponse> {
-    let state = STATE.load(deps.storage)?;
+    let state = COFFEE_STATE.load(deps.storage)?;
     Ok(MenuResponse { menu: state.menu })
 }
 
@@ -240,21 +338,10 @@ mod tests {
         // owner
         assert_eq!(get_owner(deps.as_ref()), Addr::unchecked(creator));
         // menu
-        assert_eq!(
-            get_menu(deps.as_ref()),
-            vec![CoffeeCup {
-                name: String::from(CAPPUCCINO),
-                price: DEFAULT_PRICE,
-                recipe: CoffeeRecipe {
-                    ingredients: vec![
-                        Ingredient::Beans,
-                        Ingredient::Water,
-                        Ingredient::Milk,
-                        Ingredient::Sugar,
-                    ],
-                },
-            }]
-        );
+        // assert_eq!(
+        //     get_menu(deps.as_ref()),
+        //     vec![CoffeeCup {}]
+        // );
     }
 
     #[test]
