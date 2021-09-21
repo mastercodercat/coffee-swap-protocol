@@ -11,6 +11,10 @@ pub enum ContractError {
     // Add any other custom errors you like here.
     #[error("InvalidParam")]
     InvalidParam {},
+    #[error("InvalidParam")]
+    NotEnoughFundsError {},
+    #[error("InvalidParam")]
+    InternalError {},
     // for internal usage only !
     #[error("NotAnError")]
     NotAnError {},

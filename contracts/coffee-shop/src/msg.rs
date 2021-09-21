@@ -28,11 +28,11 @@ pub enum QueryMsg {
     Menu {
         coffee_shop_key: String,
     },
-    /// Implements CW20. Returns the current balance of the given address, 0 if unset.
+    // Implements CW20. Returns the current balance of the given address, 0 if unset.
     Balance {
         address: String,
     },
-    /// Implements CW20. Returns metadata on the contract - name, decimals, supply, etc.
+    // Implements CW20. Returns metadata on the contract - name, decimals, supply, etc.
     TokenInfo {},
 }
 

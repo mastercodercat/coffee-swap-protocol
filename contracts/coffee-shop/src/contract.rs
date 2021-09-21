@@ -1,10 +1,11 @@
 use std::ops::{Add, Mul};
 
 use cosmwasm_std::{
-    Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, to_binary, Uint128,
+    Addr, attr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, to_binary, Uint128, WasmMsg,
 };
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
+use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg, MinterResponse};
 use cw20_base::allowances::{
     execute_burn_from, execute_decrease_allowance, execute_increase_allowance, execute_send_from,
     execute_transfer_from, query_allowance,
@@ -12,7 +13,7 @@ use cw20_base::allowances::{
 use cw20_base::contract::{
     execute_burn, execute_mint, execute_send, execute_transfer, query_balance, query_token_info,
 };
-use cw20_base::state::{MinterData, TOKEN_INFO, TokenInfo};
+use cw20_base::state::{TOKEN_INFO, TokenInfo};
 use cw2::set_contract_version;
 
 use crate::coffee_state::{COFFEE_STATE, CoffeeState};
@@ -31,11 +32,11 @@ use crate::state::{State, STATE};
 const CONTRACT_NAME: &str = "crates.io:coffee-shop";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-const TOKEN_NAME: &str = "astroport-coffee-shop";
+const TOKEN_NAME: &str = "astroport";
 const TOKEN_SYMBOL: &str = "ASTRO";
 
-const COFFEE_SHOP_KEY: &str ="astroport_1";
-const DEFAULT_PRICE: Uint128 = Uint128::new(1);
+const COFFEE_SHOP_KEY: &str = "coffee-shop";
+const DEFAULT_PRICE: Uint128 = Uint128::new(100000000);
 // coffee menu
 const CAPPUCCINO: &str = "Cappuccino";
 const LATE: &str = "Late";
@@ -48,9 +49,9 @@ pub fn instantiate(
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
-    // Check valid token info
     msg.validate()?;
 
+    // Option 1
     // store token info using cw20-base format
     // let token_info = TokenInfo {
     //     name: msg.name,
@@ -62,37 +63,23 @@ pub fn instantiate(
     //         minter: _env.contract.address,
     //         cap: None,
     //     }),
-        // mint: match msg.mint {
-        //     Some(m) => Some(MinterData {
-        //         minter: deps.api.addr_validate(&m.minter)?,
-        //         cap: m.cap,
-        // }),
-        // None => None,
-        // };
     // };
     // TOKEN_INFO.save(deps.storage, &token_info)?;
 
-    // Create token
-    // let resp = Response::new().add_message(CosmosMsg::Wasm(WasmMsg::Instantiate {
-    //     admin: None,
-    //     code_id: msg.token_code_id,
-    //     msg: to_binary(&TokenInstantiateMsg {
-    //         name: TOKEN_NAME.to_string(),
-    //         symbol: TOKEN_SYMBOL.to_string(),
-    //         decimals: 6,
-    //         initial_balances: vec![],
-    //         mint: Some(MinterResponse {
-    //             minter: env.contract.address.to_string(),
-    //             cap: None,
-    //         }),
-            // init_hook: Some(InitHook {
-            //     msg: to_binary(&ExecuteMsg::PostInitialize {})?,
-            //     contract_addr: env.contract.address.to_string(),
-            // }),
-    //     })?,
-    //     funds: vec![],
-    //     label: String::from("Astroport Coffee Shop Token"),
-    // }));
+    // Option 2
+    // let token_init_msg = cw20_base::msg::InstantiateMsg {
+    //     name: msg.name,
+    //     symbol: msg.symbol,
+    //     decimals: msg.decimals,
+    //     initial_balances: vec![],
+    //     // set self as minter, so we can properly execute mint and burn
+    //     mint: Some(MinterResponse {
+    //         minter: _env.contract.address.to_string(),
+    //         cap: None,
+    //     }),
+    //     marketing: None
+    // };
+    // cw20_base::contract::instantiate(deps, _env.clone(), info, token_init_msg);
 
     let state = State {
         owner: info.sender.clone(),
@@ -228,32 +215,39 @@ pub fn buy_coffee(
     id: Uint128,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
-    if info.funds
-    let state = COFFEE_STATE.load(deps.storage, coffee_shop_key.clone());
-    if !state.is_ok() {
+    let coffee_state = COFFEE_STATE.load(deps.storage, coffee_shop_key.clone());
+
+    if !coffee_state.is_ok() {
         return Err(ContractError::InvalidParam {});
     }
+    let val = coffee_state.unwrap();
+
+    let _id = id.u128() as usize;
+    if _id == 0 || _id > val.menu.len() {
+        return Err(ContractError::InvalidParam {});
+    }
+
+    let cup_price = val.menu[_id - 1].price;
+
+    // todo: check balance
+    let query_msg = Cw20QueryMsg::Balance { address: info.sender.to_string() };
+    // if balance <= cup_price * amount {
+    //     return Err(ContractError::NotEnoughFundsError {});
+    // }
+
     COFFEE_STATE.update(deps.storage, coffee_shop_key, |state| -> Result<_, ContractError> {
-        let index = id.u128() as usize;
+
         // TODO: check wether menu, ingredients have already been init
         let mut val = state.unwrap();
-        if val.menu.len() > index {
-            return Err(ContractError::InvalidParam {});
-        }
-
-        let order_total = amount.mul(Uint128::new(AVERAGE_CUP_WEIGHT));
+        let total_ingredients_weight = amount.mul(Uint128::new(AVERAGE_CUP_WEIGHT));
 
         let err = products::check_weight(
-            &val.menu[index - 1].recipe.ingredients,
+            &val.menu[_id - 1].recipe.ingredients,
             &val.ingredient_portions,
-            order_total,
+            total_ingredients_weight,
         );
 
-        // match weight {
-        //     InvalidParam {} => {
-        //         return Err(InvalidParam {});
-        //     }
-        // };
+        // todo: decrease ingredients amount, increase contract balance, transfer/burn amount sender's address
 
         Ok(val)
     })?;
@@ -277,11 +271,14 @@ pub fn set_price(
         return Err(ContractError::InvalidParam {});
     }
     COFFEE_STATE.update(deps.storage, coffee_shop_key, |_state| -> Result<_, ContractError> {
-        if id == Uint128::zero() || price == Uint128::zero() {
-            return Err(ContractError::InvalidParam {});
-        }
         // TODO: check wether menu have already been init
         let mut val = _state.unwrap();
+
+        let _id = id.u128() as usize;
+
+        if _id == 0 || _id > val.menu.len() || price == Uint128::zero() {
+            return Err(ContractError::InvalidParam {});
+        }
         val.menu[id.u128() as usize - 1].price = price;
         Ok(val)
     })?;
@@ -300,7 +297,7 @@ pub fn load_ingredients(
     }
 
     COFFEE_STATE.update(deps.storage, coffee_shop_key, |state| -> Result<_, ContractError> {
-        let mut val= state.unwrap();
+        let mut val = state.unwrap();
         // TODO: eliminate loading ing-s duplicates. Refactor with map probably
         for portion in portions {
             if portion.weight == Uint128::zero() {

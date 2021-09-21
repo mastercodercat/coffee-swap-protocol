@@ -1,8 +1,9 @@
+use std::ops::{Add, Mul};
+
 use cosmwasm_std::{Addr, StdResult, Uint128};
 use cw_storage_plus::Map;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::ops::{Add, Mul};
 
 // kilogrammes
 pub const WEIGHT_PRECISION: u128 = 3;
@@ -15,14 +16,6 @@ pub struct CoffeeCup {
     pub recipe: CoffeeRecipe,
     pub price: Uint128,
     // volume: f32,
-}
-
-impl IngredientCupShare {
-    // TODO: add validation share validation or fulfill empty space by water
-    pub fn is_available_cup() -> StdResult<()> {
-        // if check_loaded_ingredients_weight() {}
-        Ok(())
-    }
 }
 
 pub fn check_weight(
@@ -76,11 +69,6 @@ pub enum Ingredient {
     Milk,
     Water,
     Beans,
-    // Coffee beans
-    // Arabica,
-    // Robusta,
-    // Liberica,
-    // Excelsa,
 }
 
 // We define a custom struct for each query response
@@ -100,4 +88,51 @@ pub struct MenuResponse {
 #[serde(rename_all = "snake_case")]
 pub struct IngredientsResponse {
     pub ingredients: Vec<IngredientPortion>,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::products::{check_weight, IngredientPortion, IngredientCupShare, Ingredient};
+    use cosmwasm_std::Uint128;
+
+    fn check_weight_test() {
+        let ingredient_portions = vec![
+            IngredientPortion {
+                ingredient: Ingredient::Beans,
+                weight: Uint128::new(100),
+            },
+            IngredientPortion {
+                ingredient: Ingredient::Water,
+                weight: Uint128::new(100),
+            },
+            IngredientPortion {
+                ingredient: Ingredient::Milk,
+                weight: Uint128::new(100),
+            },
+            IngredientPortion {
+                ingredient: Ingredient::Sugar,
+                weight: Uint128::new(100),
+            },
+        ];
+        let ingredients = vec![
+            IngredientCupShare {
+                ingredient_type: Ingredient::Water,
+                share: Uint128::new(45),
+            },
+            IngredientCupShare {
+                ingredient_type: Ingredient::Beans,
+                share: Uint128::new(25),
+            },
+            IngredientCupShare {
+                ingredient_type: Ingredient::Milk,
+                share: Uint128::new(25),
+            },
+            IngredientCupShare {
+                ingredient_type: Ingredient::Sugar,
+                share: Uint128::new(5),
+            },
+        ];
+
+        assert_eq!(check_weight(&ingredients, &ingredient_portions, Uint128::new(100)), true);
+    }
 }
