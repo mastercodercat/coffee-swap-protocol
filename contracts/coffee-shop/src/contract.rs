@@ -86,8 +86,8 @@ pub fn instantiate(
         balance: Uint128::zero(),
     };
 
-    set_contract_version(deps.clone().storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-    STATE.save(deps.clone().storage, &state)?;
+    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
+    STATE.save(deps.storage, &state)?;
 
     let coffee_state = CoffeeState {
         ingredient_portions: vec![
@@ -176,7 +176,7 @@ pub fn instantiate(
         ],
     };
 
-    COFFEE_STATE.save(deps.clone().storage, String::from(COFFEE_SHOP_KEY), &coffee_state)?;
+    COFFEE_STATE.save(deps.storage, String::from(COFFEE_SHOP_KEY), &coffee_state)?;
 
     Ok(Response::new()
         .add_attribute("method", "instantiate")
