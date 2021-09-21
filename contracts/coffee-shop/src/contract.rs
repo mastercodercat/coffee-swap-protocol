@@ -1,10 +1,12 @@
 use std::ops::{Add, Mul};
 
-use cosmwasm_std::{
-    Addr, attr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, to_binary, Uint128, WasmMsg,
-};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
+use cosmwasm_std::{
+    attr, to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128,
+    WasmMsg,
+};
+use cw2::set_contract_version;
 use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg, MinterResponse};
 use cw20_base::allowances::{
     execute_burn_from, execute_decrease_allowance, execute_increase_allowance, execute_send_from,
@@ -13,16 +15,15 @@ use cw20_base::allowances::{
 use cw20_base::contract::{
     execute_burn, execute_mint, execute_send, execute_transfer, query_balance, query_token_info,
 };
-use cw20_base::state::{TOKEN_INFO, TokenInfo};
-use cw2::set_contract_version;
+use cw20_base::state::{MinterData, TokenInfo, TOKEN_INFO};
 
-use crate::coffee_state::{COFFEE_STATE, CoffeeState};
+use crate::coffee_state::{CoffeeState, COFFEE_STATE};
 use crate::error::ContractError;
 use crate::error::ContractError::InvalidParam;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
 use crate::products;
 use crate::products::{
-    AVERAGE_CUP_WEIGHT, Coffee, CoffeeCup, CoffeeRecipe, Ingredient, IngredientPortion,
+    Coffee, CoffeeCup, CoffeeRecipe, Ingredient, IngredientPortion, AVERAGE_CUP_WEIGHT,
     WEIGHT_PRECISION,
 };
 use crate::products::{IngredientCupShare, IngredientsResponse, MenuResponse, OwnerResponse};
@@ -51,43 +52,42 @@ pub fn instantiate(
 ) -> Result<Response, ContractError> {
     msg.validate()?;
 
-    // Option 1
     // store token info using cw20-base format
-    // let token_info = TokenInfo {
-    //     name: msg.name,
-    //     symbol: msg.symbol,
-    //     decimals: msg.decimals,
-    //     total_supply: Uint128::zero(),
-    //     // set self as minter, so we can properly execute mint and burn
-    //     mint: Some(MinterData {
-    //         minter: _env.contract.address,
-    //         cap: None,
-    //     }),
-    // };
-    // TOKEN_INFO.save(deps.storage, &token_info)?;
+    let token_info = TokenInfo {
+        name: String::from(TOKEN_NAME),
+        symbol: String::from(TOKEN_SYMBOL),
+        decimals: msg.decimals,
+        total_supply: Uint128::zero(),
+        // set self as minter, so we can properly execute mint and burn
+        mint: Some(MinterData {
+            minter: _env.contract.address,
+            cap: None,
+        }),
+    };
+    TOKEN_INFO.save(deps.storage, &token_info)?;
 
-    // Option 2
-    // let token_init_msg = cw20_base::msg::InstantiateMsg {
-    //     name: msg.name,
-    //     symbol: msg.symbol,
-    //     decimals: msg.decimals,
-    //     initial_balances: vec![],
-    //     // set self as minter, so we can properly execute mint and burn
-    //     mint: Some(MinterResponse {
-    //         minter: _env.contract.address.to_string(),
-    //         cap: None,
-    //     }),
-    //     marketing: None
-    // };
-    // cw20_base::contract::instantiate(deps, _env.clone(), info, token_init_msg);
+    // inst contract
+    let token_init_msg = cw20_base::msg::InstantiateMsg {
+        name: String::from(msg.name),
+        symbol: String::from(msg.symbol),
+        decimals: msg.decimals,
+        initial_balances: vec![],
+        // set self as minter, so we can properly execute mint and burn
+        mint: Some(MinterResponse {
+            minter: _env.contract.address.to_string(),
+            cap: None,
+        }),
+        marketing: None,
+    };
+    cw20_base::contract::instantiate(deps, _env.clone(), info, token_init_msg);
 
     let state = State {
         owner: info.sender.clone(),
         balance: Uint128::zero(),
     };
 
-    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-    STATE.save(deps.storage, &state)?;
+    set_contract_version(deps.clone().storage, CONTRACT_NAME, CONTRACT_VERSION)?;
+    STATE.save(deps.clone().storage, &state)?;
 
     let coffee_state = CoffeeState {
         ingredient_portions: vec![
@@ -176,11 +176,11 @@ pub fn instantiate(
         ],
     };
 
-    COFFEE_STATE.save(deps.storage, String::from(COFFEE_SHOP_KEY), &coffee_state)?;
+    COFFEE_STATE.save(deps.clone().storage, String::from(COFFEE_SHOP_KEY), &coffee_state)?;
 
     Ok(Response::new()
         .add_attribute("method", "instantiate")
-        .add_attribute("owner", info.sender))
+        .add_attribute("owner", info.sender.clone()))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -203,8 +203,16 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::SetPrice { coffee_shop_key, id, price } => set_price(deps, info, coffee_shop_key, id, price),
-        ExecuteMsg::BuyCoffee { coffee_shop_key, id, amount } => buy_coffee(deps, info, coffee_shop_key, id, amount),
+        ExecuteMsg::SetPrice {
+            coffee_shop_key,
+            id,
+            price,
+        } => set_price(deps, info, coffee_shop_key, id, price),
+        ExecuteMsg::BuyCoffee {
+            coffee_shop_key,
+            id,
+            amount,
+        } => buy_coffee(deps, info, coffee_shop_key, id, amount),
     }
 }
 
@@ -230,27 +238,32 @@ pub fn buy_coffee(
     let cup_price = val.menu[_id - 1].price;
 
     // todo: check balance
-    let query_msg = Cw20QueryMsg::Balance { address: info.sender.to_string() };
+    let query_msg = Cw20QueryMsg::Balance {
+        address: info.sender.to_string(),
+    };
     // if balance <= cup_price * amount {
     //     return Err(ContractError::NotEnoughFundsError {});
     // }
 
-    COFFEE_STATE.update(deps.storage, coffee_shop_key, |state| -> Result<_, ContractError> {
+    COFFEE_STATE.update(
+        deps.storage,
+        coffee_shop_key,
+        |state| -> Result<_, ContractError> {
+            // TODO: check wether menu, ingredients have already been init
+            let mut val = state.unwrap();
+            let total_ingredients_weight = amount.mul(Uint128::new(AVERAGE_CUP_WEIGHT));
 
-        // TODO: check wether menu, ingredients have already been init
-        let mut val = state.unwrap();
-        let total_ingredients_weight = amount.mul(Uint128::new(AVERAGE_CUP_WEIGHT));
+            let err = products::check_weight(
+                &val.menu[_id - 1].recipe.ingredients,
+                &val.ingredient_portions,
+                total_ingredients_weight,
+            );
 
-        let err = products::check_weight(
-            &val.menu[_id - 1].recipe.ingredients,
-            &val.ingredient_portions,
-            total_ingredients_weight,
-        );
+            // todo: decrease ingredients amount, increase contract balance, transfer/burn amount sender's address
 
-        // todo: decrease ingredients amount, increase contract balance, transfer/burn amount sender's address
-
-        Ok(val)
-    })?;
+            Ok(val)
+        },
+    )?;
 
     Ok(Response::new().add_attribute("method", "buy_coffee"))
 }
@@ -270,18 +283,22 @@ pub fn set_price(
     if !state.is_ok() {
         return Err(ContractError::InvalidParam {});
     }
-    COFFEE_STATE.update(deps.storage, coffee_shop_key, |_state| -> Result<_, ContractError> {
-        // TODO: check wether menu have already been init
-        let mut val = _state.unwrap();
+    COFFEE_STATE.update(
+        deps.storage,
+        coffee_shop_key,
+        |_state| -> Result<_, ContractError> {
+            // TODO: check wether menu have already been init
+            let mut val = _state.unwrap();
 
-        let _id = id.u128() as usize;
+            let _id = id.u128() as usize;
 
-        if _id == 0 || _id > val.menu.len() || price == Uint128::zero() {
-            return Err(ContractError::InvalidParam {});
-        }
-        val.menu[id.u128() as usize - 1].price = price;
-        Ok(val)
-    })?;
+            if _id == 0 || _id > val.menu.len() || price == Uint128::zero() {
+                return Err(ContractError::InvalidParam {});
+            }
+            val.menu[id.u128() as usize - 1].price = price;
+            Ok(val)
+        },
+    )?;
 
     Ok(Response::new().add_attribute("method", "set_price"))
 }
@@ -296,21 +313,25 @@ pub fn load_ingredients(
         return Err(ContractError::Unauthorized {});
     }
 
-    COFFEE_STATE.update(deps.storage, coffee_shop_key, |state| -> Result<_, ContractError> {
-        let mut val = state.unwrap();
-        // TODO: eliminate loading ing-s duplicates. Refactor with map probably
-        for portion in portions {
-            if portion.weight == Uint128::zero() {
-                return Err(ContractError::InvalidParam {});
-            }
-            for state_portion in val.ingredient_portions.iter_mut() {
-                if portion.ingredient == state_portion.ingredient {
-                    state_portion.weight.add(portion.weight);
+    COFFEE_STATE.update(
+        deps.storage,
+        coffee_shop_key,
+        |state| -> Result<_, ContractError> {
+            let mut val = state.unwrap();
+            // TODO: eliminate loading ing-s duplicates. Refactor with map probably
+            for portion in portions {
+                if portion.weight == Uint128::zero() {
+                    return Err(ContractError::InvalidParam {});
+                }
+                for state_portion in val.ingredient_portions.iter_mut() {
+                    if portion.ingredient == state_portion.ingredient {
+                        state_portion.weight.add(portion.weight);
+                    }
                 }
             }
-        }
-        Ok(val)
-    })?;
+            Ok(val)
+        },
+    )?;
 
     Ok(Response::new().add_attribute("method", "set_price"))
 }
@@ -336,7 +357,9 @@ fn query_ingredients(deps: Deps, coffee_shop_key: String) -> StdResult<Ingredien
 }
 
 fn get_ingredients(deps: Deps, coffee_shop_key: String) -> Vec<IngredientPortion> {
-    query_ingredients(deps, coffee_shop_key).unwrap().ingredients
+    query_ingredients(deps, coffee_shop_key)
+        .unwrap()
+        .ingredients
 }
 
 fn query_menu(deps: Deps, coffee_shop_key: String) -> StdResult<MenuResponse> {
@@ -403,7 +426,11 @@ mod tests {
             id: zero_value,
             price: zero_value,
         };
-        let msg = ExecuteMsg::SetPrice { coffee_shop_key: String::from(COFFEE_SHOP_KEY), id, price: id };
+        let msg = ExecuteMsg::SetPrice {
+            coffee_shop_key: String::from(COFFEE_SHOP_KEY),
+            id,
+            price: id,
+        };
         let info = mock_info(&creator, &[]);
 
         execute(deps.as_mut(), mock_env(), info, msg.clone()).unwrap();

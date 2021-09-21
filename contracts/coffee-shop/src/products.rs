@@ -92,7 +92,7 @@ pub struct IngredientsResponse {
 
 #[cfg(test)]
 mod tests {
-    use crate::products::{check_weight, IngredientPortion, IngredientCupShare, Ingredient};
+    use crate::products::{check_weight, Ingredient, IngredientCupShare, IngredientPortion};
     use cosmwasm_std::Uint128;
 
     fn check_weight_test() {
@@ -133,6 +133,9 @@ mod tests {
             },
         ];
 
-        assert_eq!(check_weight(&ingredients, &ingredient_portions, Uint128::new(100)), true);
+        assert_eq!(
+            check_weight(&ingredients, &ingredient_portions, Uint128::new(100)),
+            true
+        );
     }
 }

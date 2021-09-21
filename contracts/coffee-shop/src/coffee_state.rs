@@ -1,8 +1,8 @@
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 use crate::products::{CoffeeCup, IngredientPortion};
 use cosmwasm_std::{Addr, Coin, Uint128};
 use cw_storage_plus::Map;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct CoffeeState {
