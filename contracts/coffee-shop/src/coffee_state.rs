@@ -11,5 +11,4 @@ pub struct CoffeeState {
     pub ingredient_portions: Vec<IngredientPortion>,
 }
 
-// &[u8]
 pub const COFFEE_STATE: Map<String, CoffeeState> = Map::new("coffee_state");

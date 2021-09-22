@@ -12,6 +12,8 @@ use cw20_base::allowances::{
     execute_burn_from, execute_decrease_allowance, execute_increase_allowance, execute_send_from,
     execute_transfer_from, query_allowance,
 };
+
+use cw20_base::msg::{InstantiateMsg as CW20InstantiateMsg};
 use cw20_base::contract::{
     execute_burn, execute_mint, execute_send, execute_transfer, query_balance, query_token_info,
 };
@@ -52,38 +54,31 @@ pub fn instantiate(
 ) -> Result<Response, ContractError> {
     msg.validate()?;
 
-    // store token info using cw20-base format
-    let token_info = TokenInfo {
-        name: String::from(TOKEN_NAME),
-        symbol: String::from(TOKEN_SYMBOL),
-        decimals: msg.decimals,
-        total_supply: Uint128::zero(),
-        // set self as minter, so we can properly execute mint and burn
-        mint: Some(MinterData {
-            minter: _env.contract.address,
-            cap: None,
-        }),
-    };
-    TOKEN_INFO.save(deps.storage, &token_info)?;
-
-    // inst contract
-    let token_init_msg = cw20_base::msg::InstantiateMsg {
-        name: String::from(msg.name),
-        symbol: String::from(msg.symbol),
-        decimals: msg.decimals,
-        initial_balances: vec![],
-        // set self as minter, so we can properly execute mint and burn
-        mint: Some(MinterResponse {
-            minter: _env.contract.address.to_string(),
-            cap: None,
-        }),
-        marketing: None,
-    };
-    cw20_base::contract::instantiate(deps, _env.clone(), info, token_init_msg);
+        let mut messages: Vec<SubMsg> = vec![SubMsg {
+        msg: WasmMsg::Instantiate {
+            code_id: msg.token_contract_id,
+            funds: vec![],
+            admin: None,
+            label: String::from("token"),
+            msg: to_binary(&CW20InstantiateMsg {
+                name: String::from(TOKEN_NAME),
+                symbol: String::from(TOKEN_SYMBOL),
+                decimals: msg.decimals,
+                initial_balances: vec![],
+                mint: None,
+                marketing: None
+            })?,
+        }
+            .into(),
+        id: 0,
+        gas_limit: None,
+        reply_on: ReplyOn::Never,
+    }];
 
     let state = State {
         owner: info.sender.clone(),
         balance: Uint128::zero(),
+        coffee_token_addr: ()
     };
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
@@ -223,7 +218,7 @@ pub fn buy_coffee(
     id: Uint128,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
-    let coffee_state = COFFEE_STATE.load(deps.storage, coffee_shop_key.clone());
+    let coffee_state = COFFEE_STATE.load(deps.storage, coffee_shop_key.clone())?;
 
     if !coffee_state.is_ok() {
         return Err(ContractError::InvalidParam {});
@@ -241,6 +236,31 @@ pub fn buy_coffee(
     let query_msg = Cw20QueryMsg::Balance {
         address: info.sender.to_string(),
     };
+
+    let state = STATE.load(deps.storage)?;
+
+    let asset = AssetInfo{};
+    // asset.qeury_pool();
+
+    let astro = AssetInfo::Token {
+        contract_addr: cfg.astro_token_contract.clone(),
+    };
+
+        // Get Balance
+        let balance = asset.query_pool(&deps.querier, env.contract.address.clone())?;
+        if !balance.is_zero() {
+            let msg = if a.equal(&astro) {
+                // Transfer astro directly
+                let asset = Asset {
+                    info: a,
+                    amount: balance,
+                };
+
+                asset.into_msg(&deps.querier, cfg.staking_contract.clone())?
+            };
+        }
+
+    // state.
     // if balance <= cup_price * amount {
     //     return Err(ContractError::NotEnoughFundsError {});
     // }
@@ -345,10 +365,6 @@ fn get_owner(deps: Deps) -> Addr {
     query_owner(deps).unwrap().owner
 }
 
-fn get_balance<U: Into<String>>(deps: Deps, addr: U) -> Uint128 {
-    query_balance(deps, addr.into()).unwrap().balance
-}
-
 fn query_ingredients(deps: Deps, coffee_shop_key: String) -> StdResult<IngredientsResponse> {
     let state = COFFEE_STATE.load(deps.storage, coffee_shop_key)?;
     Ok(IngredientsResponse {
@@ -385,6 +401,7 @@ mod tests {
             name: "DRV Token".to_string(),
             symbol: "DRV".to_string(),
             decimals: 0,
+            coffee_token_addr: ()
         };
         let info = mock_info(&creator, &[]);
 
@@ -412,6 +429,7 @@ mod tests {
             name: "DRV Token".to_string(),
             symbol: "DRV".to_string(),
             decimals: 0,
+            coffee_token_addr: ()
         };
         let info = mock_info(&creator, &[]);
 

@@ -1,10 +1,9 @@
-use astroport::staking::{ConfigResponse, InstantiateMsg as xInstatiateMsg, QueryMsg};
-use astroport::token::InstantiateMsg;
 use cosmwasm_std::{
+    Addr,
     attr,
-    testing::{mock_env, MockApi, MockStorage},
-    to_binary, Addr, QueryRequest, Uint128, WasmQuery,
+    QueryRequest, testing::{mock_env, MockApi, MockStorage}, to_binary, Uint128, WasmQuery,
 };
+use cw20_base::state::{MinterData, TokenInfo, TOKEN_INFO};
 use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg, MinterResponse};
 use cw_multi_test::{App, BankKeeper, ContractWrapper, Executor};
 
@@ -20,81 +19,10 @@ fn mock_app() -> App {
     App::new(api, env.block, bank, MockStorage::new())
 }
 
-fn instantiate_contracts(router: &mut App, owner: Addr) -> (Addr, Addr, Addr) {
-    let astro_token_contract = Box::new(ContractWrapper::new(
-        astroport_token::contract::execute,
-        astroport_token::contract::instantiate,
-        astroport_token::contract::query,
-    ));
-
-    let astro_token_code_id = router.store_code(astro_token_contract);
-
-    let msg = InstantiateMsg {
-        name: String::from("Astro token"),
-        symbol: String::from("ASTRO"),
-        decimals: 6,
-        initial_balances: vec![],
-        mint: Some(MinterResponse {
-            minter: owner.to_string(),
-            cap: None,
-        }),
-        init_hook: None,
-    };
-
-    let astro_token_instance = router
-        .instantiate_contract(
-            astro_token_code_id,
-            owner.clone(),
-            &msg,
-            &[],
-            String::from("ASTRO"),
-            None,
-        )
-        .unwrap();
-
-    let staking_contract = Box::new(ContractWrapper::new(
-        astroport_staking::contract::execute,
-        astroport_staking::contract::instantiate,
-        astroport_staking::contract::query,
-    ));
-    let staking_code_id = router.store_code(staking_contract);
-
-    let msg = xInstatiateMsg {
-        token_code_id: astro_token_code_id,
-        deposit_token_addr: astro_token_instance.clone(),
-    };
-    let staking_instance = router
-        .instantiate_contract(
-            staking_code_id,
-            owner,
-            &msg,
-            &[],
-            String::from("xASTRO"),
-            None,
-        )
-        .unwrap();
-
-    let msg = QueryMsg::Config {};
-    let x_astro_token_instance = router
-        .wrap()
-        .query::<ConfigResponse>(&QueryRequest::Wasm(WasmQuery::Smart {
-            contract_addr: staking_instance.to_string(),
-            msg: to_binary(&msg).unwrap(),
-        }))
-        .unwrap()
-        .share_token_addr;
-
-    (
-        astro_token_instance,
-        staking_instance,
-        x_astro_token_instance,
-    )
-}
-
 fn mint_some_astro(router: &mut App, owner: Addr, astro_token_instance: Addr, to: &str) {
     let msg = cw20::Cw20ExecuteMsg::Mint {
         recipient: String::from(to),
-        amount: Uint128::from(100u128),
+        amount: Uint128::from(100),
     };
     let res = router
         .execute_contract(owner.clone(), astro_token_instance.clone(), &msg, &[])
@@ -103,18 +31,15 @@ fn mint_some_astro(router: &mut App, owner: Addr, astro_token_instance: Addr, to
     assert_eq!(res.events[1].attributes[2], attr("to", String::from(to)));
     assert_eq!(
         res.events[1].attributes[3],
-        attr("amount", Uint128::from(100u128))
+        attr("amount", Uint128::from(100))
     );
 }
 
 #[test]
-fn should_not_allow_byu_if_not_enough_tokens() {
+fn should_not_allow_buy_if_not_enough_tokens() {
     let mut router = mock_app();
 
     let owner = Addr::unchecked("owner");
-
-    let (astro_token_instance, staking_instance, x_astro_token_instance) =
-        instantiate_contracts(&mut router, owner.clone());
 
     // mint 100 ASTRO for Alice
     mint_some_astro(
@@ -137,8 +62,7 @@ fn should_not_allow_byu_if_not_enough_tokens() {
     assert_eq!(
         res.unwrap(),
         BalanceResponse {
-            balance: Uint128::from(100u128)
+            balance: Uint128::from(100)
         }
     );
-
 }

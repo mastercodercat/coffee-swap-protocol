@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct State {
     pub owner: Addr,
     pub balance: Uint128,
+    pub coffee_token_addr: Addr,
 }
 
 pub const STATE: Item<State> = Item::new("state");
