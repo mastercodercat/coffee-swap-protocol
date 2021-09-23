@@ -1,7 +1,6 @@
 use std::ops::{Add, Mul};
 
 use cosmwasm_std::{Addr, StdResult, Uint128};
-use cw_storage_plus::Map;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +12,6 @@ pub const AVERAGE_CUP_WEIGHT: u128 = 250u128;
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct CoffeeCup {
     pub name: String,
-    pub recipe: CoffeeRecipe,
     pub price: Uint128,
     // volume: f32,
 }
@@ -80,6 +78,19 @@ pub struct OwnerResponse {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+pub struct BalanceResponse {
+    pub balance: Uint128,
+}
+
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct PriceResponse {
+    pub price: Uint128,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub struct MenuResponse {
     pub menu: Vec<CoffeeCup>,
 }
@@ -135,6 +146,11 @@ mod tests {
 
         assert_eq!(
             check_weight(&ingredients, &ingredient_portions, Uint128::new(100)),
+            true
+        );
+
+        assert_eq!(
+            check_weight(&ingredients, &ingredient_portions, Uint128::new(1000)),
             true
         );
     }

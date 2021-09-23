@@ -1,33 +1,24 @@
-use std::ops::{Add, Mul};
+use std::io::Stderr;
+use std::ops::{Add, Mul, Sub};
 
+use cosmwasm_std::{
+    Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult, to_binary, Uint128,
+};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{
-    attr, to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128,
-    WasmMsg,
-};
-use cw2::set_contract_version;
 use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg, MinterResponse};
-use cw20_base::allowances::{
-    execute_burn_from, execute_decrease_allowance, execute_increase_allowance, execute_send_from,
-    execute_transfer_from, query_allowance,
-};
-
-use cw20_base::msg::{InstantiateMsg as CW20InstantiateMsg};
 use cw20_base::contract::{
-    execute_burn, execute_mint, execute_send, execute_transfer, query_balance, query_token_info,
+    execute_burn, execute_mint, execute_send, execute_transfer, query_balance as cw20_query_balance,
 };
-use cw20_base::state::{MinterData, TokenInfo, TOKEN_INFO};
+use cw20_base::state::{MinterData, TOKEN_INFO, TokenInfo};
+use cw2::set_contract_version;
 
-use crate::coffee_state::{CoffeeState, COFFEE_STATE};
+use crate::coffee_state::{COFFEE_STATE, CoffeeState};
 use crate::error::ContractError;
-use crate::error::ContractError::InvalidParam;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use crate::msg::QueryMsg::Price;
 use crate::products;
-use crate::products::{
-    Coffee, CoffeeCup, CoffeeRecipe, Ingredient, IngredientPortion, AVERAGE_CUP_WEIGHT,
-    WEIGHT_PRECISION,
-};
+use crate::products::{AVERAGE_CUP_WEIGHT, Coffee, CoffeeCup, CoffeeRecipe, Ingredient, IngredientPortion, PriceResponse, WEIGHT_PRECISION};
 use crate::products::{IngredientCupShare, IngredientsResponse, MenuResponse, OwnerResponse};
 use crate::state::{State, STATE};
 
@@ -35,10 +26,6 @@ use crate::state::{State, STATE};
 const CONTRACT_NAME: &str = "crates.io:coffee-shop";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-const TOKEN_NAME: &str = "astroport";
-const TOKEN_SYMBOL: &str = "ASTRO";
-
-const COFFEE_SHOP_KEY: &str = "coffee-shop";
 const DEFAULT_PRICE: Uint128 = Uint128::new(100000000);
 // coffee menu
 const CAPPUCCINO: &str = "Cappuccino";
@@ -52,33 +39,12 @@ pub fn instantiate(
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
-    msg.validate()?;
-
-        let mut messages: Vec<SubMsg> = vec![SubMsg {
-        msg: WasmMsg::Instantiate {
-            code_id: msg.token_contract_id,
-            funds: vec![],
-            admin: None,
-            label: String::from("token"),
-            msg: to_binary(&CW20InstantiateMsg {
-                name: String::from(TOKEN_NAME),
-                symbol: String::from(TOKEN_SYMBOL),
-                decimals: msg.decimals,
-                initial_balances: vec![],
-                mint: None,
-                marketing: None
-            })?,
-        }
-            .into(),
-        id: 0,
-        gas_limit: None,
-        reply_on: ReplyOn::Never,
-    }];
+    // msg.validate()?;
 
     let state = State {
         owner: info.sender.clone(),
         balance: Uint128::zero(),
-        coffee_token_addr: ()
+        coffee_token_addr: msg.token_addr,
     };
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
@@ -107,71 +73,72 @@ pub fn instantiate(
             CoffeeCup {
                 name: String::from(CAPPUCCINO),
                 price: DEFAULT_PRICE,
-                recipe: CoffeeRecipe {
-                    ingredients: vec![
-                        IngredientCupShare {
-                            ingredient_type: Ingredient::Water,
-                            share: Uint128::new(45),
-                        },
-                        IngredientCupShare {
-                            ingredient_type: Ingredient::Beans,
-                            share: Uint128::new(25),
-                        },
-                        IngredientCupShare {
-                            ingredient_type: Ingredient::Milk,
-                            share: Uint128::new(25),
-                        },
-                        IngredientCupShare {
-                            ingredient_type: Ingredient::Sugar,
-                            share: Uint128::new(5),
-                        },
-                    ],
-                },
             },
             CoffeeCup {
                 name: String::from(LATE),
                 price: DEFAULT_PRICE,
-                recipe: CoffeeRecipe {
-                    ingredients: vec![
-                        IngredientCupShare {
-                            ingredient_type: Ingredient::Beans,
-                            share: Uint128::new(2),
-                        },
-                        IngredientCupShare {
-                            ingredient_type: Ingredient::Water,
-                            share: Uint128::new(45),
-                        },
-                        IngredientCupShare {
-                            ingredient_type: Ingredient::Beans,
-                            share: Uint128::new(25),
-                        },
-                    ],
-                },
             },
             CoffeeCup {
                 name: String::from(AMERICANO),
                 price: DEFAULT_PRICE,
-                recipe: CoffeeRecipe {
-                    ingredients: vec![
-                        IngredientCupShare {
-                            ingredient_type: Ingredient::Water,
-                            share: Uint128::new(70),
-                        },
-                        IngredientCupShare {
-                            ingredient_type: Ingredient::Beans,
-                            share: Uint128::new(25),
-                        },
-                        IngredientCupShare {
-                            ingredient_type: Ingredient::Sugar,
-                            share: Uint128::new(5),
-                        },
-                    ],
-                },
             },
+        ],
+        recipes: vec![CoffeeRecipe {
+            ingredients: vec![
+                IngredientCupShare {
+                    ingredient_type: Ingredient::Water,
+                    share: Uint128::new(45),
+                },
+                IngredientCupShare {
+                    ingredient_type: Ingredient::Beans,
+                    share: Uint128::new(25),
+                },
+                IngredientCupShare {
+                    ingredient_type: Ingredient::Milk,
+                    share: Uint128::new(25),
+                },
+                IngredientCupShare {
+                    ingredient_type: Ingredient::Sugar,
+                    share: Uint128::new(5),
+                },
+            ],
+        },
+                      CoffeeRecipe {
+                          ingredients: vec![
+                              IngredientCupShare {
+                                  ingredient_type: Ingredient::Beans,
+                                  share: Uint128::new(2),
+                              },
+                              IngredientCupShare {
+                                  ingredient_type: Ingredient::Water,
+                                  share: Uint128::new(45),
+                              },
+                              IngredientCupShare {
+                                  ingredient_type: Ingredient::Beans,
+                                  share: Uint128::new(25),
+                              },
+                          ],
+                      },
+                      CoffeeRecipe {
+                          ingredients: vec![
+                              IngredientCupShare {
+                                  ingredient_type: Ingredient::Water,
+                                  share: Uint128::new(70),
+                              },
+                              IngredientCupShare {
+                                  ingredient_type: Ingredient::Beans,
+                                  share: Uint128::new(25),
+                              },
+                              IngredientCupShare {
+                                  ingredient_type: Ingredient::Sugar,
+                                  share: Uint128::new(5),
+                              },
+                          ],
+                      },
         ],
     };
 
-    COFFEE_STATE.save(deps.storage, String::from(COFFEE_SHOP_KEY), &coffee_state)?;
+    COFFEE_STATE.save(deps.storage, String::from(msg.shop_key), &coffee_state)?;
 
     Ok(Response::new()
         .add_attribute("method", "instantiate")
@@ -183,10 +150,12 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         // custom queries
         QueryMsg::Owner {} => to_binary(&query_owner(deps)?),
+        QueryMsg::Balance {} => to_binary(&query_balance(deps)?),
+        QueryMsg::Price { coffee_shop_key, id } => to_binary(&query_price(deps, coffee_shop_key, id)?),
         QueryMsg::Menu { coffee_shop_key } => to_binary(&query_menu(deps, coffee_shop_key)?),
+        QueryMsg::Ingredients { coffee_shop_key } => to_binary(&query_ingredients(deps, coffee_shop_key)?),
         // inherited from cw20-base
-        QueryMsg::TokenInfo {} => to_binary(&query_token_info(deps)?),
-        QueryMsg::Balance { address } => to_binary(&query_balance(deps, address)?),
+        QueryMsg::CW20Balance { address } => to_binary(&cw20_query_balance(deps, address)?),
     }
 }
 
@@ -203,6 +172,10 @@ pub fn execute(
             id,
             price,
         } => set_price(deps, info, coffee_shop_key, id, price),
+        ExecuteMsg::LoadIngredients {
+            coffee_shop_key,
+            portions,
+        } => load_ingredients(deps, info, coffee_shop_key, portions),
         ExecuteMsg::BuyCoffee {
             coffee_shop_key,
             id,
@@ -220,67 +193,63 @@ pub fn buy_coffee(
 ) -> Result<Response, ContractError> {
     let coffee_state = COFFEE_STATE.load(deps.storage, coffee_shop_key.clone())?;
 
-    if !coffee_state.is_ok() {
-        return Err(ContractError::InvalidParam {});
-    }
-    let val = coffee_state.unwrap();
-
     let _id = id.u128() as usize;
-    if _id == 0 || _id > val.menu.len() {
+    if _id == 0 || _id > coffee_state.menu.len() {
         return Err(ContractError::InvalidParam {});
     }
 
-    let cup_price = val.menu[_id - 1].price;
-
-    // todo: check balance
-    let query_msg = Cw20QueryMsg::Balance {
-        address: info.sender.to_string(),
-    };
+    // TODO: check wether menu, ingredients have already been init
 
     let state = STATE.load(deps.storage)?;
+    let coffee_state = COFFEE_STATE.load(deps.storage, coffee_shop_key.clone())?;
 
-    let asset = AssetInfo{};
-    // asset.qeury_pool();
+    let cup_price = coffee_state.menu[_id - 1].price;
+    // check buyer balance
+    // let balance_query = Cw20QueryMsg::Balance {
+    //     address: info.sender.to_string(),
+    // };
+    let balance = cw20_query_balance(deps.as_ref(), info.sender.to_string())?;
 
-    let astro = AssetInfo::Token {
-        contract_addr: cfg.astro_token_contract.clone(),
-    };
+    if balance.balance <= cup_price * amount {
+        return Err(ContractError::NotEnoughFunds {});
+    }
 
-        // Get Balance
-        let balance = asset.query_pool(&deps.querier, env.contract.address.clone())?;
-        if !balance.is_zero() {
-            let msg = if a.equal(&astro) {
-                // Transfer astro directly
-                let asset = Asset {
-                    info: a,
-                    amount: balance,
-                };
+    // check is enough ingredients for order
+    let recipe = coffee_state.recipes[_id - 1].clone();
+    let total_ingredients_weight = amount.mul(Uint128::new(AVERAGE_CUP_WEIGHT));
 
-                asset.into_msg(&deps.querier, cfg.staking_contract.clone())?
-            };
-        }
+    let is_enough_ingredients = products::check_weight(
+        &recipe.ingredients,
+        &coffee_state.ingredient_portions,
+        total_ingredients_weight,
+    );
+    if !is_enough_ingredients {
+        return Err(ContractError::NotEnoughIngredients {});
+    }
+    // transfer/burn amount sender's address
+    // increase contract balance
+    let total_income = amount.mul(cup_price);
+    STATE.update(
+        deps.storage,
+        |state| -> Result<_, ContractError> {
+            state.balance.add(total_income);
+            Ok(state)
+        });
 
-    // state.
-    // if balance <= cup_price * amount {
-    //     return Err(ContractError::NotEnoughFundsError {});
-    // }
-
+    // decrease ingredients amount
     COFFEE_STATE.update(
         deps.storage,
-        coffee_shop_key,
+        coffee_shop_key.clone(),
         |state| -> Result<_, ContractError> {
-            // TODO: check wether menu, ingredients have already been init
             let mut val = state.unwrap();
-            let total_ingredients_weight = amount.mul(Uint128::new(AVERAGE_CUP_WEIGHT));
-
-            let err = products::check_weight(
-                &val.menu[_id - 1].recipe.ingredients,
-                &val.ingredient_portions,
-                total_ingredients_weight,
-            );
-
-            // todo: decrease ingredients amount, increase contract balance, transfer/burn amount sender's address
-
+            for portion in val.ingredient_portions.iter_mut() {
+                for ingredient in recipe.ingredients.iter() {
+                    if ingredient.ingredient_type != portion.ingredient {
+                        continue;
+                    }
+                    portion.weight.sub(total_ingredients_weight * ingredient.share);
+                }
+            }
             Ok(val)
         },
     )?;
@@ -338,7 +307,7 @@ pub fn load_ingredients(
         coffee_shop_key,
         |state| -> Result<_, ContractError> {
             let mut val = state.unwrap();
-            // TODO: eliminate loading ing-s duplicates. Refactor with map probably
+            // TODO: eliminate loading ing-s duplicates. Refactor with map
             for portion in portions {
                 if portion.weight == Uint128::zero() {
                     return Err(ContractError::InvalidParam {});
@@ -361,8 +330,9 @@ fn query_owner(deps: Deps) -> StdResult<OwnerResponse> {
     Ok(OwnerResponse { owner: state.owner })
 }
 
-fn get_owner(deps: Deps) -> Addr {
-    query_owner(deps).unwrap().owner
+fn query_balance(deps: Deps) -> StdResult<BalanceResponse> {
+    let state = STATE.load(deps.storage)?;
+    Ok(BalanceResponse { balance: state.balance })
 }
 
 fn query_ingredients(deps: Deps, coffee_shop_key: String) -> StdResult<IngredientsResponse> {
@@ -372,19 +342,18 @@ fn query_ingredients(deps: Deps, coffee_shop_key: String) -> StdResult<Ingredien
     })
 }
 
-fn get_ingredients(deps: Deps, coffee_shop_key: String) -> Vec<IngredientPortion> {
-    query_ingredients(deps, coffee_shop_key)
-        .unwrap()
-        .ingredients
+fn query_price(deps: Deps, coffee_shop_key: String, id: Uint128) -> StdResult<PriceResponse> {
+    let state = COFFEE_STATE.load(deps.storage, coffee_shop_key)?;
+    let _id = id.u128() as usize;
+    if _id == 0 || _id > state.menu.len() {
+        // return Err(NotFound {});
+    }
+    Ok(PriceResponse { price: state.menu[_id - 1].price })
 }
 
 fn query_menu(deps: Deps, coffee_shop_key: String) -> StdResult<MenuResponse> {
     let state = COFFEE_STATE.load(deps.storage, coffee_shop_key)?;
     Ok(MenuResponse { menu: state.menu })
-}
-
-fn get_menu(deps: Deps, coffee_shop_key: String) -> Vec<CoffeeCup> {
-    query_menu(deps, coffee_shop_key).unwrap().menu
 }
 
 #[cfg(test)]
@@ -397,11 +366,11 @@ mod tests {
     fn proper_instantiation() {
         let mut deps = mock_dependencies(&[]);
         let creator = String::from("creator");
+        let shop_key = "shop".to_string();
+
         let msg = InstantiateMsg {
-            name: "DRV Token".to_string(),
-            symbol: "DRV".to_string(),
-            decimals: 0,
-            coffee_token_addr: ()
+            token_addr: Addr::unchecked("addr"),
+            shop_key,
         };
         let info = mock_info(&creator, &[]);
 
@@ -409,67 +378,51 @@ mod tests {
         let res = instantiate(deps.as_mut(), mock_env(), info, msg.clone()).unwrap();
         assert_eq!(0, res.messages.len());
 
-        // no balance
-        assert_eq!(get_balance(deps.as_ref(), &creator), Uint128::zero());
         // owner
-        assert_eq!(get_owner(deps.as_ref()), Addr::unchecked(creator));
-        // menu
-        // assert_eq!(
-        //     get_menu(deps.as_ref()),
-        //     vec![CoffeeCup {}]
-        // );
+        assert_eq!(query_owner(deps.as_ref()).unwrap().owner, Addr::unchecked(creator));
     }
 
     #[test]
     fn set_price_test() {
         let mut deps = mock_dependencies(&[]);
         let creator = String::from("creator");
+        let shop_key = "shop".to_string();
 
         let msg = InstantiateMsg {
-            name: "DRV Token".to_string(),
-            symbol: "DRV".to_string(),
-            decimals: 0,
-            coffee_token_addr: ()
+            token_addr: Addr::unchecked("addr"),
+            shop_key: shop_key.clone(),
         };
         let info = mock_info(&creator, &[]);
 
         let res = instantiate(deps.as_mut(), mock_env(), info, msg.clone()).unwrap();
         assert_eq!(0, res.messages.len());
 
-        let shop_key = String::from(COFFEE_SHOP_KEY);
         let zero_value = Uint128::zero();
         let id = Uint128::from(1u8);
         let msg_zeros = ExecuteMsg::SetPrice {
-            coffee_shop_key: shop_key,
+            coffee_shop_key: shop_key.clone(),
             id: zero_value,
             price: zero_value,
         };
         let msg = ExecuteMsg::SetPrice {
-            coffee_shop_key: String::from(COFFEE_SHOP_KEY),
+            coffee_shop_key: shop_key.clone(),
             id,
             price: id,
         };
         let info = mock_info(&creator, &[]);
 
         execute(deps.as_mut(), mock_env(), info, msg.clone()).unwrap();
-        let res = get_menu(deps.as_ref(), String::from(COFFEE_SHOP_KEY));
+        let menu = query_menu(deps.as_ref(), shop_key.clone())
+            .unwrap()
+            .menu;
 
-        assert_eq!(res[id.u128() as usize - 1].price, id);
+        assert_ne!(menu[zero_value.u128() as usize].price, zero_value);
+        assert_eq!(menu[id.u128() as usize - 1].price, id);
 
         // other cases
         let info = mock_info(&creator, &[]);
 
         execute(deps.as_mut(), mock_env(), info, msg_zeros.clone())
             .expect_err("Must return InvalidParam error");
-        // match err {
-        //     Err(ContractError::InvalidParam {}) => {}
-        //     _ => panic!("Must return InvalidParam error"),
-        // }
-        // assert_eq!(
-        //     err,
-        //     ContractError::InvalidParam {});
-
-        let res = get_menu(deps.as_ref(), String::from(COFFEE_SHOP_KEY));
-        assert_ne!(res[zero_value.u128() as usize].price, zero_value);
     }
 }

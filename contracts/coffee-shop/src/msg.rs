@@ -1,18 +1,24 @@
-use cosmwasm_std::{StdError, StdResult, Uint128, Addr};
+use std::ops::Add;
+
+use cosmwasm_std::{Addr, StdError, StdResult, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::products::{CoffeeCup, IngredientPortion};
-use std::ops::Add;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
-     pub coffee_token_addr: Addr,
+    pub token_addr: Addr,
+    pub shop_key: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
+    LoadIngredients {
+        coffee_shop_key: String,
+        portions: Vec<IngredientPortion>,
+    },
     SetPrice {
         coffee_shop_key: String,
         id: Uint128,
@@ -29,15 +35,10 @@ pub enum ExecuteMsg {
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     Owner {},
+    Balance {},
+    Price { coffee_shop_key: String, id: Uint128 },
     Menu { coffee_shop_key: String },
+    Ingredients { coffee_shop_key: String },
     // Implements CW20. Returns the current balance of the given address, 0 if unset.
-    Balance { address: String },
-}
-
-impl InstantiateMsg {
-    pub fn validate(&self) -> StdResult<()> {
-        // Check addr
-
-        Ok(())
-    }
+    CW20Balance { address: String },
 }

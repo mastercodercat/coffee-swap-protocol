@@ -8,13 +8,14 @@ pub enum ContractError {
 
     #[error("Unauthorized")]
     Unauthorized {},
-    // Add any other custom errors you like here.
     #[error("InvalidParam")]
     InvalidParam {},
-    #[error("InvalidParam")]
-    NotEnoughFundsError {},
-    #[error("InvalidParam")]
+    #[error("NotEnoughIngredients")]
+    NotEnoughIngredients {},
+    #[error("InternalError")]
     InternalError {},
+    #[error("NotEnoughFunds")]
+    NotEnoughFunds {},
     // for internal usage only !
     #[error("NotAnError")]
     NotAnError {},
