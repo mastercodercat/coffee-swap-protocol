@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod tests {
+    use std::ops::{Add, Mul, Sub};
+
     use cosmwasm_std::{
         attr, to_binary, Addr, ContractResult, Empty, QueryRequest, Response, Uint128, WasmMsg,
         WasmQuery,
@@ -12,9 +14,8 @@ mod tests {
 
     use crate::contract::{execute, instantiate, query};
     use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
-    use crate::products::{Ingredient, IngredientPortion, IngredientsResponse, PriceResponse};
+    use crate::products::{Ingredient, IngredientPortion, IngredientsResponse, MenuResponse, PriceResponse, RecipesResponse, AVERAGE_CUP_WEIGHT, SHARE_PRECISION, calculate_total_ingredient_weight};
     use crate::ContractError;
-    use std::ops::{Add, Mul};
 
     const ALICE: &str = "Alice";
     const BOB: &str = "Bob";
@@ -92,7 +93,7 @@ mod tests {
             .unwrap();
 
         let alice_address = Addr::unchecked(ALICE);
-        let amount = Uint128::from(1000u128);
+        let amount = Uint128::from(u128::pow(10u128, 6));
         let allowed_spend_amount = amount.mul(amount);
 
         // mint tokens for Alice
@@ -150,7 +151,7 @@ mod tests {
                 &[],
             )
             .unwrap_err();
-        // assert_eq!(res, ContractError::Unauthorized {});
+        assert_eq!(res.to_string(), "Unauthorized");
 
         // owner sets price
         router.execute_contract(owner.clone(), coffee_swap_addr.clone(), &set_price_msg, &[]);
@@ -192,18 +193,16 @@ mod tests {
             portions: portions.clone(),
         };
 
-        // user loads ingredients
-        // router
-        //     .execute_contract(
-        //         alice_address.clone(),
-        //         coffee_swap_addr.clone(),
-        //         &load_msg,
-        //         &[],
-        //     )
-        //     .expect_err("Must return Unauthorised error");
-
-        // let res: ContractResult<Response> = vm_testing_execute(deps, env, info, load_msg);
-        // assert_eq!(res.unwrap_err(), "Unauthorized");
+        // user can't load ingredients
+        let res = router
+            .execute_contract(
+                alice_address.clone(),
+                coffee_swap_addr.clone(),
+                &load_msg,
+                &[],
+            )
+            .unwrap_err();
+        assert_eq!(res.to_string(), "Unauthorized");
 
         // owner loads ingredients
         router.execute_contract(owner.clone(), coffee_swap_addr.clone(), &load_msg, &[]);
@@ -212,12 +211,12 @@ mod tests {
         let ingredients_query = QueryMsg::Ingredients {
             coffee_shop_key: shop_key.clone(),
         };
-        let ingredients_before_sell: IngredientsResponse = router
+        let ingredients: IngredientsResponse = router
             .wrap()
             .query_wasm_smart(&coffee_swap_addr, &ingredients_query)
             .unwrap();
 
-        assert_eq!(ingredients_before_sell.ingredients, portions.clone());
+        assert_eq!(ingredients.ingredients, portions.clone());
 
         // user without set allowance can't buy
 
@@ -250,6 +249,12 @@ mod tests {
             amount: cup_amount.clone(),
         };
 
+        // user can't buy with NotEnoughFunds
+        let res = router
+            .execute_contract(bob_address.clone(), coffee_swap_addr.clone(), &buy_msg, &[])
+            .unwrap_err();
+        // assert_eq!(res.to_string(), "NotEnoughFunds");
+
         let set_allowance_msg = Cw20ExecuteMsg::IncreaseAllowance {
             // spender: cw20_addr.to_string(),
             spender: coffee_swap_addr.to_string(),
@@ -264,36 +269,58 @@ mod tests {
         );
 
         // user buys coffee successfully
-        router.execute_contract(
-            alice_address.clone(),
-            coffee_swap_addr.clone(),
-            &buy_msg,
-            &[],
-        );
+        let res = router
+            .execute_contract(
+                alice_address.clone(),
+                coffee_swap_addr.clone(),
+                &buy_msg,
+                &[],
+            )
+            .unwrap_err();
 
-        // check balances, ingredient portions,
-        let cw20_buyer_balance_query = Cw20QueryMsg::Balance {
-            address: alice_address.to_string(),
+        // assert_eq!(res.to_string(), "123");
+
+        // check decreasing ingredients portions
+        let ingredients_query = QueryMsg::Recipes {
+            coffee_shop_key: shop_key.clone(),
         };
-        let cw20_contract_balance_query = Cw20QueryMsg::Balance {
-            address: coffee_swap_addr.to_string(),
-        };
-        let buyer_balance_after: BalanceResponse = router
+        let recipes: RecipesResponse = router
             .wrap()
-            .query_wasm_smart(&cw20_addr.clone(), &cw20_buyer_balance_query)
+            .query_wasm_smart(&coffee_swap_addr, &ingredients_query)
             .unwrap();
-        let balance_after: BalanceResponse = router
+        let ingredients_for_selected_cup = recipes.recipes[coffee_cup_id.u128() as usize - 1]
+            .ingredients
+            .clone();
+
+        // ingredients_before_sell
+        let total_ingredients_weight = cup_amount.mul(Uint128::new(AVERAGE_CUP_WEIGHT));
+        let mut ingredients_remained = ingredients.ingredients;
+        for ingredient in ingredients_remained.iter_mut() {
+            for ingredient_portion in ingredients_for_selected_cup.clone() {
+                if ingredient.ingredient != ingredient_portion.ingredient_type {
+                    continue;
+                }
+                ingredient.weight = ingredient
+                    .weight
+                    .checked_sub(calculate_total_ingredient_weight(
+                        total_ingredients_weight,
+                        ingredient_portion.share,
+                        SHARE_PRECISION,
+                    ))
+                    .unwrap();
+            }
+        }
+        let ingredients_query = QueryMsg::Ingredients {
+            coffee_shop_key: shop_key.clone(),
+        };
+        let ingredients_after_sell: IngredientsResponse = router
             .wrap()
-            .query_wasm_smart(&cw20_addr.clone(), &cw20_contract_balance_query)
+            .query_wasm_smart(&coffee_swap_addr, &ingredients_query)
             .unwrap();
 
-        // compare amounts
-        let total = price.mul(cup_amount);
-        assert_eq!(balance_after.balance, total.add(balance_before.balance));
-        assert_eq!(
-            buyer_balance_after.balance,
-            total.add(buyer_balance_before.balance)
-        );
+        assert_eq!(ingredients_after_sell.ingredients, ingredients_remained);
+        assert_eq!(ingredients_after_sell.ingredients, &[]);
+        assert_eq!(ingredients_remained, &[]);
 
         // assert_eq!(ingredients_before_sell.ingredients, ingredients_after_sell.ingredients );
     }

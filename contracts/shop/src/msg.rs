@@ -43,6 +43,9 @@ pub enum QueryMsg {
     Menu {
         coffee_shop_key: String,
     },
+    Recipes {
+        coffee_shop_key: String,
+    },
     Ingredients {
         coffee_shop_key: String,
     },

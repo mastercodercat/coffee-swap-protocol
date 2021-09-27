@@ -3,14 +3,16 @@ use std::ops::{Add, Mul, Sub};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128,
+    to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult,
+    Uint128,
 };
 use cw2::set_contract_version;
 use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg, MinterResponse};
 use cw20_base::allowances::execute_transfer_from as cw20_transfer_from;
 use cw20_base::contract::{
     execute as cw20_execute, execute_burn, execute_mint, execute_send,
-    execute_transfer as cw20_execute_transfer, query_balance as cw20_query_balance,
+    execute_transfer as cw20_execute_transfer, query as cw20_query,
+    query_balance as cw20_query_balance,
 };
 use cw20_base::state::{MinterData, TokenInfo, TOKEN_INFO};
 
@@ -19,10 +21,7 @@ use crate::error::ContractError;
 use crate::msg::QueryMsg::Price;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
 use crate::products;
-use crate::products::{
-    Coffee, CoffeeCup, CoffeeRecipe, Ingredient, IngredientPortion, PriceResponse,
-    AVERAGE_CUP_WEIGHT, WEIGHT_PRECISION,
-};
+use crate::products::{Coffee, CoffeeCup, CoffeeRecipe, Ingredient, IngredientPortion, PriceResponse, RecipesResponse, AVERAGE_CUP_WEIGHT, SHARE_PRECISION, calculate_total_ingredient_weight};
 use crate::products::{IngredientCupShare, IngredientsResponse, MenuResponse, OwnerResponse};
 use crate::state::{State, STATE};
 
@@ -31,6 +30,7 @@ const CONTRACT_NAME: &str = "crates.io:shop";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const DEFAULT_PRICE: Uint128 = Uint128::new(100000000);
+
 // coffee menu
 const CAPPUCCINO: &str = "Cappuccino";
 const LATE: &str = "Late";
@@ -159,6 +159,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             id,
         } => to_binary(&query_price(deps, coffee_shop_key, id)?),
         QueryMsg::Menu { coffee_shop_key } => to_binary(&query_menu(deps, coffee_shop_key)?),
+        QueryMsg::Recipes { coffee_shop_key } => to_binary(&query_recipes(deps, coffee_shop_key)?),
         QueryMsg::Ingredients { coffee_shop_key } => {
             to_binary(&query_ingredients(deps, coffee_shop_key)?)
         }
@@ -207,17 +208,14 @@ pub fn buy_coffee(
         return Err(ContractError::InvalidParam {});
     }
 
-    // TODO: check wether menu, ingredients have already been init
-
-    let state = STATE.load(deps.storage)?;
     let coffee_state = COFFEE_STATE.load(deps.storage, coffee_shop_key.clone())?;
 
     let cup_price = coffee_state.menu[_id - 1].price;
-    // check buyer balance
-    // let balance_query = Cw20QueryMsg::Balance {
-    //     address: info.sender.to_string(),
-    // };
+
     let balance = cw20_query_balance(deps.as_ref(), info.sender.to_string())?;
+    // if balance.balance == Uint128::zero() {
+    //     return Err(ContractError::NotAnError {});
+    // }
 
     if balance.balance <= cup_price * amount {
         return Err(ContractError::NotEnoughFunds {});
@@ -231,6 +229,7 @@ pub fn buy_coffee(
         &recipe.ingredients,
         &coffee_state.ingredient_portions,
         total_ingredients_weight,
+        SHARE_PRECISION,
     );
     if !is_enough_ingredients {
         return Err(ContractError::NotEnoughIngredients {});
@@ -238,12 +237,6 @@ pub fn buy_coffee(
     // transfer amount from sender to contract balance
     let total = amount.mul(cup_price);
 
-    // let transfer_from = Cw20ExecuteMsg::TransferFrom {
-    //     owner: info.sender.to_string(),
-    //     recipient: env.contract.address.to_string(),
-    //     amount: total,
-    // };
-    // cw20_execute(deps.branch(), env.clone(), info.clone(), transfer_from);
     cw20_transfer_from(
         deps.branch(),
         env.clone(),
@@ -264,9 +257,11 @@ pub fn buy_coffee(
                     if ingredient.ingredient_type != portion.ingredient {
                         continue;
                     }
-                    portion
-                        .weight
-                        .sub(total_ingredients_weight * ingredient.share);
+                    portion.weight = portion.weight.checked_sub(calculate_total_ingredient_weight(
+                        total_ingredients_weight,
+                        ingredient.share,
+                        SHARE_PRECISION,
+                    )).unwrap();
                 }
             }
             Ok(val)
@@ -377,6 +372,13 @@ fn query_price(deps: Deps, coffee_shop_key: String, id: Uint128) -> StdResult<Pr
 fn query_menu(deps: Deps, coffee_shop_key: String) -> StdResult<MenuResponse> {
     let state = COFFEE_STATE.load(deps.storage, coffee_shop_key)?;
     Ok(MenuResponse { menu: state.menu })
+}
+
+fn query_recipes(deps: Deps, coffee_shop_key: String) -> StdResult<RecipesResponse> {
+    let state = COFFEE_STATE.load(deps.storage, coffee_shop_key)?;
+    Ok(RecipesResponse {
+        recipes: state.recipes,
+    })
 }
 
 #[cfg(test)]

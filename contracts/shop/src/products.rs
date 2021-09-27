@@ -1,11 +1,11 @@
-use std::ops::{Add, Mul};
+use std::ops::{Add, Div, Mul};
 
 use cosmwasm_std::{Addr, StdResult, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-// kilogrammes
-pub const WEIGHT_PRECISION: u128 = 3;
+// share like %
+pub const SHARE_PRECISION: Uint128 = Uint128::new(100u128);
 
 pub const AVERAGE_CUP_WEIGHT: u128 = 250u128;
 
@@ -13,25 +13,38 @@ pub const AVERAGE_CUP_WEIGHT: u128 = 250u128;
 pub struct CoffeeCup {
     pub name: String,
     pub price: Uint128,
-    // volume: f32,
 }
 
 pub fn check_weight(
     ingredients: &Vec<IngredientCupShare>,
     portions: &Vec<IngredientPortion>,
     weight: Uint128,
+    share_precision: Uint128,
 ) -> bool {
     for ingredient in ingredients.iter() {
         for portion in portions.iter() {
             if ingredient.ingredient_type != portion.ingredient {
                 continue;
             }
-            if portion.weight < weight.mul(ingredient.share) {
+            if portion.weight
+                < calculate_total_ingredient_weight(weight, ingredient.share, share_precision)
+            {
                 return false;
             }
         }
     }
     return true;
+}
+
+pub fn calculate_total_ingredient_weight(
+    total_ingredients_weight: Uint128,
+    ingredient_share: Uint128,
+    share_precision: Uint128,
+) -> Uint128 {
+    return total_ingredients_weight
+        .mul(ingredient_share)
+        .checked_div(share_precision)
+        .unwrap();
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -96,15 +109,32 @@ pub struct MenuResponse {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+pub struct RecipesResponse {
+    pub recipes: Vec<CoffeeRecipe>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub struct IngredientsResponse {
     pub ingredients: Vec<IngredientPortion>,
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::products::{check_weight, Ingredient, IngredientCupShare, IngredientPortion};
     use cosmwasm_std::Uint128;
 
+    use crate::products::{check_weight, Ingredient, IngredientCupShare, IngredientPortion, SHARE_PRECISION, calculate_total_ingredient_weight};
+
+    #[test]
+    fn check_calculate() {
+        let weight = Uint128::new(100u128);
+        let share = Uint128::new(45);
+        let total = calculate_total_ingredient_weight(weight, share, SHARE_PRECISION);
+
+        assert_eq!(total, share)
+    }
+
+    #[test]
     fn check_weight_test() {
         let ingredient_portions = vec![
             IngredientPortion {
@@ -144,13 +174,33 @@ mod tests {
         ];
 
         assert_eq!(
-            check_weight(&ingredients, &ingredient_portions, Uint128::new(100)),
+            check_weight(
+                &ingredients,
+                &ingredient_portions,
+                Uint128::new(100),
+                SHARE_PRECISION
+            ),
             true
         );
 
         assert_eq!(
-            check_weight(&ingredients, &ingredient_portions, Uint128::new(1000)),
+            check_weight(
+                &ingredients,
+                &ingredient_portions,
+                Uint128::new(200),
+                SHARE_PRECISION
+            ),
             true
+        );
+
+        assert_eq!(
+            check_weight(
+                &ingredients,
+                &ingredient_portions,
+                Uint128::new(1000),
+                SHARE_PRECISION
+            ),
+            false
         );
     }
 }
