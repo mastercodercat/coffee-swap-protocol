@@ -250,11 +250,6 @@ mod tests {
             amount: cup_amount.clone(),
         };
 
-        let balance: BalanceResponse = router
-            .wrap()
-            .query_wasm_smart(&cw20_addr.clone(), &cw20_balance_query)
-            .unwrap();
-
         let set_allowance_msg = Cw20ExecuteMsg::IncreaseAllowance {
             spender: cw20_addr.to_string(),
             amount: allowed_spend_amount,
@@ -291,6 +286,6 @@ mod tests {
         assert_eq!(balance_after.balance, total.add(balance_before.balance));
         assert_eq!(buyer_balance_after.balance, total.add(buyer_balance_before.balance));
 
-        assert_eq!(ingredients_before_sell.ingredients, )// ingredients_after_sell.ingredients );
+        // assert_eq!(ingredients_before_sell.ingredients, ingredients_after_sell.ingredients );
     }
 }
