@@ -1,14 +1,14 @@
-use std::io::Stderr;
 use std::ops::{Add, Mul, Sub};
 
 use cosmwasm_std::{
-    Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult, to_binary, Uint128,
+    Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, to_binary, Uint128,
 };
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg, MinterResponse};
+use cw20_base::allowances::execute_transfer_from as cw20_transfer_from;
 use cw20_base::contract::{
-    execute_burn, execute_mint, execute_send, execute_transfer, query_balance as cw20_query_balance,
+    execute as cw20_execute, execute_burn, execute_mint, execute_send, execute_transfer as cw20_execute_transfer, query_balance as cw20_query_balance,
 };
 use cw20_base::state::{MinterData, TOKEN_INFO, TokenInfo};
 use cw2::set_contract_version;
@@ -23,7 +23,7 @@ use crate::products::{IngredientCupShare, IngredientsResponse, MenuResponse, Own
 use crate::state::{State, STATE};
 
 // version info for migration info
-const CONTRACT_NAME: &str = "crates.io:coffee-shop";
+const CONTRACT_NAME: &str = "crates.io:shop";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const DEFAULT_PRICE: Uint128 = Uint128::new(100000000);
@@ -39,12 +39,10 @@ pub fn instantiate(
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
-    // msg.validate()?;
-
     let state = State {
         owner: info.sender.clone(),
         balance: Uint128::zero(),
-        coffee_token_addr: msg.token_addr,
+        coffee_token_addr: deps.api.addr_validate(&msg.token_addr.to_string())?,
     };
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
@@ -180,13 +178,14 @@ pub fn execute(
             coffee_shop_key,
             id,
             amount,
-        } => buy_coffee(deps, info, coffee_shop_key, id, amount),
+        } => buy_coffee(deps, info, _env, coffee_shop_key, id, amount),
     }
 }
 
 pub fn buy_coffee(
-    deps: DepsMut,
+    mut deps: DepsMut,
     info: MessageInfo,
+    env: Env,
     coffee_shop_key: String,
     id: Uint128,
     amount: Uint128,
@@ -226,15 +225,16 @@ pub fn buy_coffee(
     if !is_enough_ingredients {
         return Err(ContractError::NotEnoughIngredients {});
     }
-    // transfer/burn amount sender's address
-    // increase contract balance
-    let total_income = amount.mul(cup_price);
-    STATE.update(
-        deps.storage,
-        |state| -> Result<_, ContractError> {
-            state.balance.add(total_income);
-            Ok(state)
-        });
+    // transfer amount from sender to contract balance
+    let total = amount.mul(cup_price);
+
+    let transfer_from = Cw20ExecuteMsg::TransferFrom {
+        owner: info.sender.to_string(),
+        recipient: env.contract.address.to_string(),
+        amount
+    };
+    cw20_execute(deps.branch(), env, info, transfer_from);
+    // cw20_transfer_from(deps, env.clone(), info.clone(), info.sender.to_string(), env.contract.address.to_string(), total);
 
     // decrease ingredients amount
     COFFEE_STATE.update(
@@ -255,6 +255,11 @@ pub fn buy_coffee(
     )?;
 
     Ok(Response::new().add_attribute("method", "buy_coffee"))
+}
+
+fn query_balance(deps: Deps) -> StdResult<BalanceResponse> {
+    let state = STATE.load(deps.storage)?;
+    Ok(BalanceResponse { balance: state.balance })
 }
 
 pub fn set_price(
@@ -328,11 +333,6 @@ pub fn load_ingredients(
 fn query_owner(deps: Deps) -> StdResult<OwnerResponse> {
     let state = STATE.load(deps.storage)?;
     Ok(OwnerResponse { owner: state.owner })
-}
-
-fn query_balance(deps: Deps) -> StdResult<BalanceResponse> {
-    let state = STATE.load(deps.storage)?;
-    Ok(BalanceResponse { balance: state.balance })
 }
 
 fn query_ingredients(deps: Deps, coffee_shop_key: String) -> StdResult<IngredientsResponse> {

@@ -11,6 +11,7 @@ mod tests {
     use crate::products::{Ingredient, IngredientPortion, IngredientsResponse, PriceResponse};
 
     const ALICE: &str = "Alice";
+    const BOB: &str = "Bob";
 
     fn mock_app() -> App {
         App::default()
@@ -54,6 +55,7 @@ mod tests {
         assert_eq!(res.events[1].attributes[3], attr("amount", amount));
     }
 
+    #[test]
     fn should_allow_buy_if_coffee_shop_inited() {
         let mut router = mock_app();
 
@@ -197,15 +199,32 @@ mod tests {
 
         // check the load was successful
         let ingredients_query = QueryMsg::Ingredients {
-            coffee_shop_key: shop_key
+            coffee_shop_key: shop_key.clone()
         };
         let ingredients: IngredientsResponse = router
             .wrap()
             .query_wasm_smart(&coffee_swap_addr, &ingredients_query)
             .unwrap();
 
-        assert_eq!(ingredients.ingredients, portions.clone());
+        // assert_eq!(ingredients.ingredients, portions.clone());
 
+        let bob_address = Addr::unchecked(BOB);
+        let cup_amount = Uint128::new(2);
+        let buy_msg = ExecuteMsg::BuyCoffee {
+            coffee_shop_key: shop_key.clone(),
+            id: coffee_cup_id.clone(),
+            amount: cup_amount.clone(),
+        };
 
+        // user with zero balance tries to buy
+        router
+            .execute_contract(bob_address.clone(), coffee_swap_addr.clone(), &buy_msg, &[])
+            .expect_err("Must return NotEnoughFunds error");
+
+        // user buys coffee successfully
+        router
+            .execute_contract(alice_address.clone(), coffee_swap_addr.clone(), &buy_msg, &[]);
+
+        // check balances, ingredient portions,
     }
 }
