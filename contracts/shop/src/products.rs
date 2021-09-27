@@ -82,7 +82,6 @@ pub struct BalanceResponse {
     pub balance: Uint128,
 }
 
-
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct PriceResponse {

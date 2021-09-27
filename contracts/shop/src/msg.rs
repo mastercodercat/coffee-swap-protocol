@@ -36,9 +36,18 @@ pub enum ExecuteMsg {
 pub enum QueryMsg {
     Owner {},
     Balance {},
-    Price { coffee_shop_key: String, id: Uint128 },
-    Menu { coffee_shop_key: String },
-    Ingredients { coffee_shop_key: String },
+    Price {
+        coffee_shop_key: String,
+        id: Uint128,
+    },
+    Menu {
+        coffee_shop_key: String,
+    },
+    Ingredients {
+        coffee_shop_key: String,
+    },
     // Implements CW20. Returns the current balance of the given address, 0 if unset.
-    CW20Balance { address: String },
+    CW20Balance {
+        address: String,
+    },
 }

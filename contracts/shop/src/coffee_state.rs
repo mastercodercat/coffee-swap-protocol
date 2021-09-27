@@ -1,4 +1,4 @@
-use crate::products::{CoffeeCup, IngredientPortion, CoffeeRecipe};
+use crate::products::{CoffeeCup, CoffeeRecipe, IngredientPortion};
 use cw_storage_plus::Map;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

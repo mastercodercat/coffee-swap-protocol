@@ -1,24 +1,28 @@
 use std::ops::{Add, Mul, Sub};
 
-use cosmwasm_std::{
-    Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, to_binary, Uint128,
-};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
+use cosmwasm_std::{
+    to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128,
+};
+use cw2::set_contract_version;
 use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg, MinterResponse};
 use cw20_base::allowances::execute_transfer_from as cw20_transfer_from;
 use cw20_base::contract::{
-    execute as cw20_execute, execute_burn, execute_mint, execute_send, execute_transfer as cw20_execute_transfer, query_balance as cw20_query_balance,
+    execute as cw20_execute, execute_burn, execute_mint, execute_send,
+    execute_transfer as cw20_execute_transfer, query_balance as cw20_query_balance,
 };
-use cw20_base::state::{MinterData, TOKEN_INFO, TokenInfo};
-use cw2::set_contract_version;
+use cw20_base::state::{MinterData, TokenInfo, TOKEN_INFO};
 
-use crate::coffee_state::{COFFEE_STATE, CoffeeState};
+use crate::coffee_state::{CoffeeState, COFFEE_STATE};
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
 use crate::msg::QueryMsg::Price;
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
 use crate::products;
-use crate::products::{AVERAGE_CUP_WEIGHT, Coffee, CoffeeCup, CoffeeRecipe, Ingredient, IngredientPortion, PriceResponse, WEIGHT_PRECISION};
+use crate::products::{
+    Coffee, CoffeeCup, CoffeeRecipe, Ingredient, IngredientPortion, PriceResponse,
+    AVERAGE_CUP_WEIGHT, WEIGHT_PRECISION,
+};
 use crate::products::{IngredientCupShare, IngredientsResponse, MenuResponse, OwnerResponse};
 use crate::state::{State, STATE};
 
@@ -81,58 +85,59 @@ pub fn instantiate(
                 price: DEFAULT_PRICE,
             },
         ],
-        recipes: vec![CoffeeRecipe {
-            ingredients: vec![
-                IngredientCupShare {
-                    ingredient_type: Ingredient::Water,
-                    share: Uint128::new(45),
-                },
-                IngredientCupShare {
-                    ingredient_type: Ingredient::Beans,
-                    share: Uint128::new(25),
-                },
-                IngredientCupShare {
-                    ingredient_type: Ingredient::Milk,
-                    share: Uint128::new(25),
-                },
-                IngredientCupShare {
-                    ingredient_type: Ingredient::Sugar,
-                    share: Uint128::new(5),
-                },
-            ],
-        },
-                      CoffeeRecipe {
-                          ingredients: vec![
-                              IngredientCupShare {
-                                  ingredient_type: Ingredient::Beans,
-                                  share: Uint128::new(2),
-                              },
-                              IngredientCupShare {
-                                  ingredient_type: Ingredient::Water,
-                                  share: Uint128::new(45),
-                              },
-                              IngredientCupShare {
-                                  ingredient_type: Ingredient::Beans,
-                                  share: Uint128::new(25),
-                              },
-                          ],
-                      },
-                      CoffeeRecipe {
-                          ingredients: vec![
-                              IngredientCupShare {
-                                  ingredient_type: Ingredient::Water,
-                                  share: Uint128::new(70),
-                              },
-                              IngredientCupShare {
-                                  ingredient_type: Ingredient::Beans,
-                                  share: Uint128::new(25),
-                              },
-                              IngredientCupShare {
-                                  ingredient_type: Ingredient::Sugar,
-                                  share: Uint128::new(5),
-                              },
-                          ],
-                      },
+        recipes: vec![
+            CoffeeRecipe {
+                ingredients: vec![
+                    IngredientCupShare {
+                        ingredient_type: Ingredient::Water,
+                        share: Uint128::new(45),
+                    },
+                    IngredientCupShare {
+                        ingredient_type: Ingredient::Beans,
+                        share: Uint128::new(25),
+                    },
+                    IngredientCupShare {
+                        ingredient_type: Ingredient::Milk,
+                        share: Uint128::new(25),
+                    },
+                    IngredientCupShare {
+                        ingredient_type: Ingredient::Sugar,
+                        share: Uint128::new(5),
+                    },
+                ],
+            },
+            CoffeeRecipe {
+                ingredients: vec![
+                    IngredientCupShare {
+                        ingredient_type: Ingredient::Beans,
+                        share: Uint128::new(2),
+                    },
+                    IngredientCupShare {
+                        ingredient_type: Ingredient::Water,
+                        share: Uint128::new(45),
+                    },
+                    IngredientCupShare {
+                        ingredient_type: Ingredient::Beans,
+                        share: Uint128::new(25),
+                    },
+                ],
+            },
+            CoffeeRecipe {
+                ingredients: vec![
+                    IngredientCupShare {
+                        ingredient_type: Ingredient::Water,
+                        share: Uint128::new(70),
+                    },
+                    IngredientCupShare {
+                        ingredient_type: Ingredient::Beans,
+                        share: Uint128::new(25),
+                    },
+                    IngredientCupShare {
+                        ingredient_type: Ingredient::Sugar,
+                        share: Uint128::new(5),
+                    },
+                ],
+            },
         ],
     };
 
@@ -149,9 +154,14 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         // custom queries
         QueryMsg::Owner {} => to_binary(&query_owner(deps)?),
         QueryMsg::Balance {} => to_binary(&query_balance(deps)?),
-        QueryMsg::Price { coffee_shop_key, id } => to_binary(&query_price(deps, coffee_shop_key, id)?),
+        QueryMsg::Price {
+            coffee_shop_key,
+            id,
+        } => to_binary(&query_price(deps, coffee_shop_key, id)?),
         QueryMsg::Menu { coffee_shop_key } => to_binary(&query_menu(deps, coffee_shop_key)?),
-        QueryMsg::Ingredients { coffee_shop_key } => to_binary(&query_ingredients(deps, coffee_shop_key)?),
+        QueryMsg::Ingredients { coffee_shop_key } => {
+            to_binary(&query_ingredients(deps, coffee_shop_key)?)
+        }
         // inherited from cw20-base
         QueryMsg::CW20Balance { address } => to_binary(&cw20_query_balance(deps, address)?),
     }
@@ -228,13 +238,20 @@ pub fn buy_coffee(
     // transfer amount from sender to contract balance
     let total = amount.mul(cup_price);
 
-    let transfer_from = Cw20ExecuteMsg::TransferFrom {
-        owner: info.sender.to_string(),
-        recipient: env.contract.address.to_string(),
-        amount
-    };
-    cw20_execute(deps.branch(), env, info, transfer_from);
-    // cw20_transfer_from(deps, env.clone(), info.clone(), info.sender.to_string(), env.contract.address.to_string(), total);
+    // let transfer_from = Cw20ExecuteMsg::TransferFrom {
+    //     owner: info.sender.to_string(),
+    //     recipient: env.contract.address.to_string(),
+    //     amount: total,
+    // };
+    // cw20_execute(deps.branch(), env.clone(), info.clone(), transfer_from);
+    cw20_transfer_from(
+        deps.branch(),
+        env.clone(),
+        info.clone(),
+        info.sender.to_string(),
+        env.contract.address.to_string(),
+        total,
+    );
 
     // decrease ingredients amount
     COFFEE_STATE.update(
@@ -247,7 +264,9 @@ pub fn buy_coffee(
                     if ingredient.ingredient_type != portion.ingredient {
                         continue;
                     }
-                    portion.weight.sub(total_ingredients_weight * ingredient.share);
+                    portion
+                        .weight
+                        .sub(total_ingredients_weight * ingredient.share);
                 }
             }
             Ok(val)
@@ -259,7 +278,9 @@ pub fn buy_coffee(
 
 fn query_balance(deps: Deps) -> StdResult<BalanceResponse> {
     let state = STATE.load(deps.storage)?;
-    Ok(BalanceResponse { balance: state.balance })
+    Ok(BalanceResponse {
+        balance: state.balance,
+    })
 }
 
 pub fn set_price(
@@ -319,7 +340,7 @@ pub fn load_ingredients(
                 }
                 for state_portion in val.ingredient_portions.iter_mut() {
                     if portion.ingredient == state_portion.ingredient {
-                        state_portion.weight.add(portion.weight);
+                        state_portion.weight = state_portion.weight.add(portion.weight);
                     }
                 }
             }
@@ -348,7 +369,9 @@ fn query_price(deps: Deps, coffee_shop_key: String, id: Uint128) -> StdResult<Pr
     if _id == 0 || _id > state.menu.len() {
         // return Err(NotFound {});
     }
-    Ok(PriceResponse { price: state.menu[_id - 1].price })
+    Ok(PriceResponse {
+        price: state.menu[_id - 1].price,
+    })
 }
 
 fn query_menu(deps: Deps, coffee_shop_key: String) -> StdResult<MenuResponse> {
@@ -379,7 +402,10 @@ mod tests {
         assert_eq!(0, res.messages.len());
 
         // owner
-        assert_eq!(query_owner(deps.as_ref()).unwrap().owner, Addr::unchecked(creator));
+        assert_eq!(
+            query_owner(deps.as_ref()).unwrap().owner,
+            Addr::unchecked(creator)
+        );
     }
 
     #[test]
@@ -412,9 +438,7 @@ mod tests {
         let info = mock_info(&creator, &[]);
 
         execute(deps.as_mut(), mock_env(), info, msg.clone()).unwrap();
-        let menu = query_menu(deps.as_ref(), shop_key.clone())
-            .unwrap()
-            .menu;
+        let menu = query_menu(deps.as_ref(), shop_key.clone()).unwrap().menu;
 
         assert_ne!(menu[zero_value.u128() as usize].price, zero_value);
         assert_eq!(menu[id.u128() as usize - 1].price, id);
