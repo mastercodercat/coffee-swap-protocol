@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct CoffeeState {
-    // TODO: separate menu with inner recipes
     pub menu: Vec<CoffeeCup>,
     pub recipes: Vec<CoffeeRecipe>,
     pub ingredient_portions: Vec<IngredientPortion>,

@@ -5,5 +5,3 @@ mod integration;
 pub mod msg;
 pub mod products;
 pub mod state;
-
-pub use crate::error::ContractError;

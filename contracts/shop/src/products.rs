@@ -1,4 +1,4 @@
-use std::ops::{Add, Div, Mul};
+use std::ops::{Mul};
 
 use cosmwasm_std::{Addr, StdResult, Uint128};
 use schemars::JsonSchema;
@@ -123,7 +123,10 @@ pub struct IngredientsResponse {
 mod tests {
     use cosmwasm_std::Uint128;
 
-    use crate::products::{check_weight, Ingredient, IngredientCupShare, IngredientPortion, SHARE_PRECISION, calculate_total_ingredient_weight};
+    use crate::products::{
+        calculate_total_ingredient_weight, check_weight, Ingredient, IngredientCupShare,
+        IngredientPortion, SHARE_PRECISION,
+    };
 
     #[test]
     fn check_calculate() {

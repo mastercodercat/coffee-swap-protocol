@@ -1,6 +1,4 @@
-use std::ops::Add;
-
-use cosmwasm_std::{Addr, StdError, StdResult, Uint128};
+use cosmwasm_std::{Addr, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -29,13 +27,13 @@ pub enum ExecuteMsg {
         id: Uint128,
         amount: Uint128,
     },
+    TransferTokens {},
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     Owner {},
-    Balance {},
     Price {
         coffee_shop_key: String,
         id: Uint128,
