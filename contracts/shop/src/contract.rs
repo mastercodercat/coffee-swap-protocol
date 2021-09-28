@@ -1,12 +1,11 @@
 use std::ops::{Add, Mul, Sub};
 
-#[cfg(not(feature = "library"))]
-use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult,
+    Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult, to_binary,
     Uint128,
 };
-use cw2::set_contract_version;
+#[cfg(not(feature = "library"))]
+use cosmwasm_std::entry_point;
 use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg, MinterResponse};
 use cw20_base::allowances::execute_transfer_from as cw20_transfer_from;
 use cw20_base::contract::{
@@ -14,14 +13,15 @@ use cw20_base::contract::{
     execute_transfer as cw20_execute_transfer, query as cw20_query,
     query_balance as cw20_query_balance,
 };
-use cw20_base::state::{MinterData, TokenInfo, TOKEN_INFO};
+use cw20_base::state::{MinterData, TOKEN_INFO, TokenInfo};
+use cw2::set_contract_version;
 
-use crate::coffee_state::{CoffeeState, COFFEE_STATE};
+use crate::coffee_state::{COFFEE_STATE, CoffeeState};
 use crate::error::ContractError;
-use crate::msg::QueryMsg::Price;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use crate::msg::QueryMsg::Price;
 use crate::products;
-use crate::products::{Coffee, CoffeeCup, CoffeeRecipe, Ingredient, IngredientPortion, PriceResponse, RecipesResponse, AVERAGE_CUP_WEIGHT, SHARE_PRECISION, calculate_total_ingredient_weight};
+use crate::products::{AVERAGE_CUP_WEIGHT, calculate_total_ingredient_weight, Coffee, CoffeeCup, CoffeeRecipe, Ingredient, IngredientPortion, PriceResponse, RecipesResponse, SHARE_PRECISION};
 use crate::products::{IngredientCupShare, IngredientsResponse, MenuResponse, OwnerResponse};
 use crate::state::{State, STATE};
 
@@ -29,7 +29,7 @@ use crate::state::{State, STATE};
 const CONTRACT_NAME: &str = "crates.io:shop";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-const DEFAULT_PRICE: Uint128 = Uint128::new(100000000);
+const DEFAULT_PRICE: Uint128 = Uint128::new(1000);
 
 // coffee menu
 const CAPPUCCINO: &str = "Cappuccino";
@@ -199,7 +199,7 @@ pub fn buy_coffee(
     env: Env,
     coffee_shop_key: String,
     id: Uint128,
-    amount: Uint128,
+    cup_amount: Uint128,
 ) -> Result<Response, ContractError> {
     let coffee_state = COFFEE_STATE.load(deps.storage, coffee_shop_key.clone())?;
 
@@ -212,18 +212,9 @@ pub fn buy_coffee(
 
     let cup_price = coffee_state.menu[_id - 1].price;
 
-    let balance = cw20_query_balance(deps.as_ref(), info.sender.to_string())?;
-    // if balance.balance == Uint128::zero() {
-    //     return Err(ContractError::NotAnError {});
-    // }
-
-    if balance.balance <= cup_price * amount {
-        return Err(ContractError::NotEnoughFunds {});
-    }
-
     // check is enough ingredients for order
     let recipe = coffee_state.recipes[_id - 1].clone();
-    let total_ingredients_weight = amount.mul(Uint128::new(AVERAGE_CUP_WEIGHT));
+    let total_ingredients_weight = cup_amount.mul(Uint128::new(AVERAGE_CUP_WEIGHT));
 
     let is_enough_ingredients = products::check_weight(
         &recipe.ingredients,
@@ -235,7 +226,7 @@ pub fn buy_coffee(
         return Err(ContractError::NotEnoughIngredients {});
     }
     // transfer amount from sender to contract balance
-    let total = amount.mul(cup_price);
+    let total = cup_amount.mul(cup_price);
 
     cw20_transfer_from(
         deps.branch(),
@@ -244,7 +235,7 @@ pub fn buy_coffee(
         info.sender.to_string(),
         env.contract.address.to_string(),
         total,
-    );
+    )?;
 
     // decrease ingredients amount
     COFFEE_STATE.update(
@@ -289,23 +280,19 @@ pub fn set_price(
         return Err(ContractError::Unauthorized {});
     }
 
-    let state = COFFEE_STATE.load(deps.storage, coffee_shop_key.clone());
-    if !state.is_ok() {
-        return Err(ContractError::InvalidParam {});
-    }
     COFFEE_STATE.update(
         deps.storage,
         coffee_shop_key,
-        |_state| -> Result<_, ContractError> {
+        |state| -> Result<_, ContractError> {
             // TODO: check wether menu have already been init
-            let mut val = _state.unwrap();
+            let mut val = state.unwrap();
 
             let _id = id.u128() as usize;
 
             if _id == 0 || _id > val.menu.len() || price == Uint128::zero() {
                 return Err(ContractError::InvalidParam {});
             }
-            val.menu[id.u128() as usize - 1].price = price;
+            val.menu[_id - 1].price = price;
             Ok(val)
         },
     )?;
@@ -422,11 +409,11 @@ mod tests {
         };
         let info = mock_info(&creator, &[]);
 
-        let res = instantiate(deps.as_mut(), mock_env(), info, msg.clone()).unwrap();
+        let res = instantiate(deps.as_mut(), mock_env(), info.clone(), msg.clone()).unwrap();
         assert_eq!(0, res.messages.len());
 
         let zero_value = Uint128::zero();
-        let id = Uint128::from(1u8);
+        let id = Uint128::new(1);
         let msg_zeros = ExecuteMsg::SetPrice {
             coffee_shop_key: shop_key.clone(),
             id: zero_value,
@@ -437,18 +424,15 @@ mod tests {
             id,
             price: id,
         };
-        let info = mock_info(&creator, &[]);
 
-        execute(deps.as_mut(), mock_env(), info, msg.clone()).unwrap();
+        execute(deps.as_mut(), mock_env(), info.clone(), msg.clone());
+
         let menu = query_menu(deps.as_ref(), shop_key.clone()).unwrap().menu;
 
         assert_ne!(menu[zero_value.u128() as usize].price, zero_value);
         assert_eq!(menu[id.u128() as usize - 1].price, id);
 
-        // other cases
-        let info = mock_info(&creator, &[]);
-
-        execute(deps.as_mut(), mock_env(), info, msg_zeros.clone())
-            .expect_err("Must return InvalidParam error");
+        let res = execute(deps.as_mut(), mock_env(), info, msg_zeros.clone()).unwrap_err();
+        assert_eq!(res.to_string(), "InvalidParam");
     }
 }

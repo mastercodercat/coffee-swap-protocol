@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // share like %
-pub const SHARE_PRECISION: Uint128 = Uint128::new(100u128);
+pub const SHARE_PRECISION: Uint128 = Uint128::new(100);
 
 pub const AVERAGE_CUP_WEIGHT: u128 = 250u128;
 
@@ -64,7 +64,7 @@ pub enum Coffee {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct IngredientCupShare {
     pub ingredient_type: Ingredient,
-    // like percentages
+    // percentages (100% is max)
     pub share: Uint128,
 }
 
@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn check_calculate() {
-        let weight = Uint128::new(100u128);
+        let weight = Uint128::new(100);
         let share = Uint128::new(45);
         let total = calculate_total_ingredient_weight(weight, share, SHARE_PRECISION);
 
