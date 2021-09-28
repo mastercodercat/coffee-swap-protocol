@@ -38,29 +38,6 @@ mod tests {
         Box::new(contract)
     }
 
-    fn mint_some_token(
-        router: &mut App,
-        owner: Addr,
-        token_instance: Addr,
-        to: &str,
-        amount: Uint128,
-    ) {
-        let recipient = String::from(to);
-
-        // mint some cw20 tokens for buying
-        let cw20_mint_msg = Cw20ExecuteMsg::Mint {
-            recipient: recipient.clone(),
-            amount,
-        };
-
-        let res = router
-            .execute_contract(owner.clone(), token_instance.clone(), &cw20_mint_msg, &[])
-            .unwrap();
-        assert_eq!(res.events[1].attributes[1], attr("action", "mint"));
-        assert_eq!(res.events[1].attributes[2], attr("to", recipient.clone()));
-        assert_eq!(res.events[1].attributes[3], attr("amount", amount));
-    }
-
     fn allowance_token(router: &mut App, owner: Addr, spender: Addr, token: Addr, amount: Uint128) {
         let msg = cw20::Cw20ExecuteMsg::IncreaseAllowance {
             spender: spender.to_string(),
@@ -85,6 +62,29 @@ mod tests {
         assert_eq!(res.events[1].attributes[4], attr("amount", amount));
     }
 
+    fn mint_some_token(
+        router: &mut App,
+        owner: Addr,
+        token_instance: Addr,
+        to: &str,
+        amount: Uint128,
+    ) {
+        let recipient = String::from(to);
+
+        // mint some cw20 tokens for buying
+        let cw20_mint_msg = Cw20ExecuteMsg::Mint {
+            recipient: recipient.clone(),
+            amount,
+        };
+
+        let res = router
+            .execute_contract(owner.clone(), token_instance.clone(), &cw20_mint_msg, &[])
+            .unwrap();
+        assert_eq!(res.events[1].attributes[1], attr("action", "mint"));
+        assert_eq!(res.events[1].attributes[2], attr("to", recipient.clone()));
+        assert_eq!(res.events[1].attributes[3], attr("amount", amount));
+    }
+
     fn check_balance(router: &mut App, user: Addr, token: Addr, expected_amount: Uint128) {
         let msg = Cw20QueryMsg::Balance {
             address: user.to_string(),
@@ -101,7 +101,7 @@ mod tests {
         assert_eq!(balance.balance, expected_amount);
     }
 
-    fn set_price_test(router: &mut App, sender: Addr, contract: Addr, shop_key: String, id: Uint128, price: Uint128) {
+    fn check_and_set_price_test(router: &mut App, sender: Addr, contract: Addr, shop_key: String, id: Uint128, price: Uint128) {
         let set_price_msg = ExecuteMsg::SetPrice {
             coffee_shop_key: shop_key.clone(),
             id,
@@ -181,7 +181,7 @@ mod tests {
             .instantiate_contract(coffee_swap_id, owner.clone(), &msg, &[], "Token", None)
             .unwrap();
 
-        set_price_test(&mut router, owner.clone(), coffee_swap_addr.clone(), shop_key.clone(), coffee_cup_id, price);
+        check_and_set_price_test(&mut router, owner.clone(), coffee_swap_addr.clone(), shop_key.clone(), coffee_cup_id, price);
 
         let portions = vec![
             IngredientPortion {

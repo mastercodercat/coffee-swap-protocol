@@ -228,6 +228,10 @@ pub fn buy_coffee(
     // transfer amount from sender to contract balance
     let total = cup_amount.mul(cup_price);
 
+    let balance = cw20_query_balance(deps.as_ref(), info.sender.to_string()).unwrap();
+    println!("{0} {1}", info.sender.to_string(), balance.balance);
+    println!("{0} {1} total: {2}", cup_amount, cup_price, total);
+
     cw20_transfer_from(
         deps.branch(),
         env.clone(),
