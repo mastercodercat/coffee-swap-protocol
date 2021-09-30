@@ -1,5 +1,5 @@
 use cosmwasm_std::{Addr, Uint128, QuerierWrapper, QueryRequest, WasmQuery, CosmosMsg, WasmMsg, StdResult, to_binary, Response};
-use cw20::{Cw20QueryMsg, Cw20ExecuteMsg};
+use cw20::{Cw20QueryMsg, Cw20ExecuteMsg, BalanceResponse};
 use crate::error::ContractError;
 
 pub fn query_token_balance(
@@ -8,16 +8,18 @@ pub fn query_token_balance(
     account_addr: Addr,
 ) -> StdResult<Uint128> {
     // load balance form the token contract
-    let balance: Uint128 = querier
+    let res: BalanceResponse = querier
         .query(&QueryRequest::Wasm(WasmQuery::Smart {
             contract_addr: String::from(contract_addr),
             msg: to_binary(&Cw20QueryMsg::Balance {
                 address: String::from(account_addr),
             })?,
         }))
-        .unwrap_or_else(|_| Uint128::zero());
+        .unwrap_or_else(|_| BalanceResponse {
+            balance: Uint128::zero(),
+        });
 
-    Ok(balance)
+    Ok(res.balance)
 }
 
 pub fn execute_transfer(contract_addr: Addr, recipient: Addr, amount: Uint128) -> Result<Response, ContractError> {

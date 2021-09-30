@@ -1,6 +1,6 @@
 use std::ops::{Mul};
 
-use cosmwasm_std::{Addr, StdResult, Uint128};
+use cosmwasm_std::{Addr, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -16,8 +16,8 @@ pub struct CoffeeCup {
 }
 
 pub fn check_weight(
-    ingredients: &Vec<IngredientCupShare>,
-    portions: &Vec<IngredientPortion>,
+    ingredients: &[IngredientCupShare],
+    portions: &[IngredientPortion],
     weight: Uint128,
     share_precision: Uint128,
 ) -> bool {
@@ -33,7 +33,7 @@ pub fn check_weight(
             }
         }
     }
-    return true;
+    true
 }
 
 pub fn calculate_total_ingredient_weight(
@@ -41,10 +41,10 @@ pub fn calculate_total_ingredient_weight(
     ingredient_share: Uint128,
     share_precision: Uint128,
 ) -> Uint128 {
-    return total_ingredients_weight
+    total_ingredients_weight
         .mul(ingredient_share)
         .checked_div(share_precision)
-        .unwrap();
+        .unwrap()
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

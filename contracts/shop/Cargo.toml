@@ -1,5 +1,5 @@
 [package]
-name = "coffee-shop"
+name = "shop"
 version = "0.1.0"
 authors = ["IvanPavlov <ip@atticlab.net>"]
 edition = "2018"
@@ -9,8 +9,6 @@ exclude = [
   "contract.wasm",
   "hash.txt",
 ]
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 crate-type = ["cdylib", "rlib"]

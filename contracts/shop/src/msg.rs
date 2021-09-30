@@ -2,7 +2,7 @@ use cosmwasm_std::{Addr, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::products::{CoffeeCup, IngredientPortion};
+use crate::products::{IngredientPortion};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
@@ -27,7 +27,7 @@ pub enum ExecuteMsg {
         id: Uint128,
         amount: Uint128,
     },
-    TransferTokens {},
+    TransferAllTokens {},
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

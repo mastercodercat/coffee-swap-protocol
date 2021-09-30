@@ -3,10 +3,10 @@ use std::fs::create_dir_all;
 
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 
-use coffee_shop::coffee_state::CoffeeState;
-use coffee_shop::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
-use coffee_shop::products::{IngredientsResponse, MenuResponse, OwnerResponse};
-use coffee_shop::state::State;
+use shop::coffee_state::CoffeeState;
+use shop::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use shop::products::{IngredientsResponse, MenuResponse, OwnerResponse};
+use shop::state::State;
 
 fn main() {
     let mut out_dir = current_dir().unwrap();

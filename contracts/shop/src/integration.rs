@@ -1,24 +1,21 @@
 #[cfg(test)]
 mod tests {
-    use std::ops::{Add, Mul, Sub};
+    use std::ops::Mul;
 
     use cosmwasm_std::{
-        attr, to_binary, Addr, ContractResult, Empty, QueryRequest, Response, StdError, Uint128,
+        attr, to_binary, Addr, Empty, QueryRequest, Uint128,
         WasmMsg, WasmQuery,
     };
-    use cosmwasm_vm::testing::execute as vm_testing_execute;
     use cw20::{BalanceResponse, MinterResponse};
     use cw20_base::msg::{ExecuteMsg as Cw20ExecuteMsg, QueryMsg as Cw20QueryMsg};
 
     use cw20_base::state::{MinterData, TokenInfo, TOKEN_INFO};
-    use cw_multi_test::{App, AppResponse, BankKeeper, Contract, ContractWrapper, Executor};
+    use cw_multi_test::{App, Contract, ContractWrapper, Executor};
 
     use crate::contract::{execute, instantiate, query};
-    use crate::error::ContractError;
     use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
     use crate::products::{
-        calculate_total_ingredient_weight, Ingredient, IngredientPortion, IngredientsResponse,
-        AVERAGE_CUP_WEIGHT, SHARE_PRECISION,
+        Ingredient, IngredientPortion, IngredientsResponse,
     };
 
     const ALICE: &str = "Alice";
@@ -114,7 +111,7 @@ mod tests {
             price,
         };
 
-        router.execute_contract(sender.clone(), contract.clone(), &set_price_msg, &[]);
+        let res = router.execute_contract(sender.clone(), contract.clone(), &set_price_msg, &[]);
 
         // compare set price
         let price_query = QueryMsg::Price {
@@ -130,7 +127,7 @@ mod tests {
     }
 
     #[test]
-    fn should_allow_buy_coffee() {
+    fn should_allow_withdraw_after_sell_coffee() {
         let mut router = mock_app();
 
         let owner = Addr::unchecked("owner");
@@ -231,7 +228,7 @@ mod tests {
         assert_eq!(res.to_string(), "Unauthorized");
 
         // owner loads ingredients
-        router.execute_contract(owner.clone(), coffee_swap_addr.clone(), &load_msg, &[]);
+        let res = router.execute_contract(owner.clone(), coffee_swap_addr.clone(), &load_msg, &[]);
 
         // check the load was successful
         let ingredients_query = QueryMsg::Ingredients {
@@ -283,5 +280,13 @@ mod tests {
             &buy_msg,
             &[],
         );
+
+        let res = router.execute_contract(
+            owner.clone(),
+            coffee_swap_addr.clone(),
+            &ExecuteMsg::TransferAllTokens {},
+            &[],
+        );
+        check_balance(&mut router, coffee_swap_addr, token_addr, Uint128::zero());
     }
 }

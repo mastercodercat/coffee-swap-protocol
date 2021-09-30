@@ -1,16 +1,16 @@
-use std::ops::{Add, Mul, Sub};
+use std::ops::{Add, Mul};
 
-use cosmwasm_std::{Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, to_binary, Uint128};
+use cosmwasm_std::{Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, to_binary, Uint128};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg, MinterResponse};
+
 use cw2::set_contract_version;
 
 use crate::coffee_state::{COFFEE_STATE, CoffeeState};
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
 use crate::products::{
-    AVERAGE_CUP_WEIGHT, calculate_total_ingredient_weight, Coffee, CoffeeCup, CoffeeRecipe,
+    AVERAGE_CUP_WEIGHT, calculate_total_ingredient_weight, CoffeeCup, CoffeeRecipe,
     Ingredient, IngredientCupShare, IngredientPortion, IngredientsResponse, MenuResponse,
     OwnerResponse, RecipesResponse, SHARE_PRECISION, check_weight};
 use crate::state::{State, STATE};
@@ -132,11 +132,11 @@ pub fn instantiate(
         ],
     };
 
-    COFFEE_STATE.save(deps.storage, String::from(msg.shop_key), &coffee_state)?;
+    COFFEE_STATE.save(deps.storage, msg.shop_key, &coffee_state)?;
 
     Ok(Response::new()
         .add_attribute("method", "instantiate")
-        .add_attribute("owner", info.sender.clone()))
+        .add_attribute("owner", info.sender))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -179,12 +179,12 @@ pub fn execute(
             id,
             amount,
         } => buy_coffee(deps, info, _env, coffee_shop_key, id, amount),
-        ExecuteMsg::TransferTokens {} => transfer_tokens_to_owner(deps, info, _env),
+        ExecuteMsg::TransferAllTokens {} => transfer_tokens_to_owner(deps, info, _env),
     }
 }
 
 pub fn buy_coffee(
-    mut deps: DepsMut,
+    deps: DepsMut,
     info: MessageInfo,
     env: Env,
     coffee_shop_key: String,
@@ -221,7 +221,7 @@ pub fn buy_coffee(
 
     let state = STATE.load(deps.storage)?;
 
-    execute_transfer_from(
+    let res = execute_transfer_from(
         state.coffee_token_addr,
         info.sender,
         env.contract.address,
@@ -231,7 +231,7 @@ pub fn buy_coffee(
     // decrease ingredients amount
     COFFEE_STATE.update(
         deps.storage,
-        coffee_shop_key.clone(),
+        coffee_shop_key,
         |state| -> Result<_, ContractError> {
             let mut val = state.unwrap();
             for portion in val.ingredient_portions.iter_mut() {
@@ -253,7 +253,7 @@ pub fn buy_coffee(
         },
     )?;
 
-    Ok(Response::new().add_attribute("method", "buy_coffee"))
+    Ok(res.add_attribute("method", "buy_coffee"))
 }
 
 pub fn set_price(
@@ -332,13 +332,13 @@ pub fn transfer_tokens_to_owner(
         return Err(ContractError::Unauthorized {});
     }
 
-    let balance = query_token_balance(&deps.querier, state.coffee_token_addr,env.contract.address.clone())?;
+    let balance = query_token_balance(&deps.querier, state.coffee_token_addr.clone(),env.contract.address.clone())?;
     if balance.is_zero() {
         return Err(ContractError::NotEnoughFunds {});
     }
 
-    execute_transfer(env.contract.address.clone(), owner.clone(), balance)?;
-    return Ok(Response::new().add_attribute("method", "execute_transfer"));
+    let res = execute_transfer(state.coffee_token_addr, owner, balance)?;
+    Ok(res.add_attribute("method", "transfer_tokens_to_owner"))
 }
 
 fn query_owner(deps: Deps) -> StdResult<OwnerResponse> {
@@ -379,6 +379,7 @@ mod tests {
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
 
     use super::*;
+    use cosmwasm_std::Addr;
 
     #[test]
     fn proper_instantiation() {
