@@ -48,7 +48,8 @@ pub enum QueryMsg {
         coffee_shop_key: String,
     },
     // Implements CW20. Returns the current balance of the given address, 0 if unset.
-    CW20Balance {
-        address: String,
+    Balance {
+        contract_address: Addr,
+        address: Addr,
     },
 }

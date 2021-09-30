@@ -2,7 +2,7 @@
 members = ["contracts/*"]
 # members = ["packages/*", "contracts/*"]
 
-[profile.release.package.coffee-shop]
+[profile.release.package.shop]
 codegen-units = 1
 incremental = false
 

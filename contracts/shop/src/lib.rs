@@ -5,3 +5,4 @@ mod integration;
 pub mod msg;
 pub mod products;
 pub mod state;
+mod token;

@@ -1,31 +1,20 @@
 use std::ops::{Add, Mul, Sub};
 
+use cosmwasm_std::{Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, to_binary, Uint128};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{
-    to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult,
-    Uint128,
-};
-use cw2::set_contract_version;
 use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg, MinterResponse};
-use cw20_base::allowances::execute_transfer_from as cw20_transfer_from;
-use cw20_base::contract::{
-    execute as cw20_execute, execute_burn, execute_mint, execute_send,
-    execute_transfer as cw20_execute_transfer, query as cw20_query, query_balance,
-};
-use cw20_base::state::{MinterData, TokenInfo, TOKEN_INFO};
+use cw2::set_contract_version;
 
-use crate::coffee_state::{CoffeeState, COFFEE_STATE};
+use crate::coffee_state::{COFFEE_STATE, CoffeeState};
 use crate::error::ContractError;
-use crate::msg::QueryMsg::Price;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
-use crate::products;
 use crate::products::{
-    calculate_total_ingredient_weight, Coffee, CoffeeCup, CoffeeRecipe, Ingredient,
-    IngredientPortion, PriceResponse, RecipesResponse, AVERAGE_CUP_WEIGHT, SHARE_PRECISION,
-};
-use crate::products::{IngredientCupShare, IngredientsResponse, MenuResponse, OwnerResponse};
+    AVERAGE_CUP_WEIGHT, calculate_total_ingredient_weight, Coffee, CoffeeCup, CoffeeRecipe,
+    Ingredient, IngredientCupShare, IngredientPortion, IngredientsResponse, MenuResponse,
+    OwnerResponse, RecipesResponse, SHARE_PRECISION, check_weight};
 use crate::state::{State, STATE};
+use crate::token::{query_token_balance, execute_transfer, execute_transfer_from};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:shop";
@@ -164,8 +153,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::Ingredients { coffee_shop_key } => {
             to_binary(&query_ingredients(deps, coffee_shop_key)?)
         }
-        // inherited from cw20-base
-        QueryMsg::CW20Balance { address } => to_binary(&query_balance(deps, address)?),
+        QueryMsg::Balance { contract_address, address} => to_binary(&query_token_balance(&deps.querier, contract_address,address)?),
     }
 }
 
@@ -218,7 +206,7 @@ pub fn buy_coffee(
     let recipe = coffee_state.recipes[_id - 1].clone();
     let total_ingredients_weight = cup_amount.mul(Uint128::new(AVERAGE_CUP_WEIGHT));
 
-    let is_enough_ingredients = products::check_weight(
+    let is_enough_ingredients = check_weight(
         &recipe.ingredients,
         &coffee_state.ingredient_portions,
         total_ingredients_weight,
@@ -227,15 +215,16 @@ pub fn buy_coffee(
     if !is_enough_ingredients {
         return Err(ContractError::NotEnoughIngredients {});
     }
+
     // transfer amount from sender to contract balance
     let total = cup_amount.mul(cup_price);
 
-    cw20_transfer_from(
-        deps.branch(),
-        env.clone(),
-        info.clone(),
-        info.sender.to_string(),
-        env.contract.address.to_string(),
+    let state = STATE.load(deps.storage)?;
+
+    execute_transfer_from(
+        state.coffee_token_addr,
+        info.sender,
+        env.contract.address,
         total,
     )?;
 
@@ -336,19 +325,20 @@ pub fn transfer_tokens_to_owner(
     info: MessageInfo,
     env: Env,
 ) -> Result<Response, ContractError> {
-    let owner = STATE.load(deps.storage)?.owner;
+    let state = STATE.load(deps.storage)?;
+    let owner = state.owner;
 
     if info.sender != owner {
         return Err(ContractError::Unauthorized {});
     }
 
-    let balance = query_balance(deps.as_ref(), env.contract.address.to_string())?.balance;
+    let balance = query_token_balance(&deps.querier, state.coffee_token_addr,env.contract.address.clone())?;
     if balance.is_zero() {
         return Err(ContractError::NotEnoughFunds {});
     }
 
-    cw20_execute_transfer(deps, env.clone(), info.clone(), owner.to_string(), balance)?;
-    return Ok(Response::new().add_attribute("method", "transfer_tokens_to_owner"));
+    execute_transfer(env.contract.address.clone(), owner.clone(), balance)?;
+    return Ok(Response::new().add_attribute("method", "execute_transfer"));
 }
 
 fn query_owner(deps: Deps) -> StdResult<OwnerResponse> {
@@ -363,15 +353,13 @@ fn query_ingredients(deps: Deps, coffee_shop_key: String) -> StdResult<Ingredien
     })
 }
 
-fn query_price(deps: Deps, coffee_shop_key: String, id: Uint128) -> StdResult<PriceResponse> {
+fn query_price(deps: Deps, coffee_shop_key: String, id: Uint128) -> StdResult<Uint128> {
     let state = COFFEE_STATE.load(deps.storage, coffee_shop_key)?;
     let _id = id.u128() as usize;
     if _id == 0 || _id > state.menu.len() {
         // return Err(NotFound {});
     }
-    Ok(PriceResponse {
-        price: state.menu[_id - 1].price,
-    })
+    Ok( state.menu[_id - 1].price)
 }
 
 fn query_menu(deps: Deps, coffee_shop_key: String) -> StdResult<MenuResponse> {

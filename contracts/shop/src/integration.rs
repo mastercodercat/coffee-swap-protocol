@@ -2,7 +2,6 @@
 mod tests {
     use std::ops::{Add, Mul, Sub};
 
-    use anyhow::{anyhow, Result as AnyHowResult};
     use cosmwasm_std::{
         attr, to_binary, Addr, ContractResult, Empty, QueryRequest, Response, StdError, Uint128,
         WasmMsg, WasmQuery,
@@ -19,7 +18,7 @@ mod tests {
     use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
     use crate::products::{
         calculate_total_ingredient_weight, Ingredient, IngredientPortion, IngredientsResponse,
-        MenuResponse, PriceResponse, RecipesResponse, AVERAGE_CUP_WEIGHT, SHARE_PRECISION,
+        AVERAGE_CUP_WEIGHT, SHARE_PRECISION,
     };
 
     const ALICE: &str = "Alice";
@@ -69,14 +68,11 @@ mod tests {
         router: &mut App,
         owner: Addr,
         token_instance: Addr,
-        to: &str,
+        to: String,
         amount: Uint128,
     ) {
-        let recipient = String::from(to);
-
-        // mint some cw20 tokens for buying
         let cw20_mint_msg = Cw20ExecuteMsg::Mint {
-            recipient: recipient.clone(),
+            recipient: to.clone(),
             amount,
         };
 
@@ -84,7 +80,7 @@ mod tests {
             .execute_contract(owner.clone(), token_instance.clone(), &cw20_mint_msg, &[])
             .unwrap();
         assert_eq!(res.events[1].attributes[1], attr("action", "mint"));
-        assert_eq!(res.events[1].attributes[2], attr("to", recipient.clone()));
+        assert_eq!(res.events[1].attributes[2], attr("to", to.clone()));
         assert_eq!(res.events[1].attributes[3], attr("amount", amount));
     }
 
@@ -93,7 +89,13 @@ mod tests {
             address: user.to_string(),
         };
 
-        let balance: BalanceResponse = router.wrap().query_wasm_smart(&token, &msg).unwrap();
+        let res: Result<BalanceResponse, _> =
+            router.wrap().query(&QueryRequest::Wasm(WasmQuery::Smart {
+                contract_addr: token.to_string(),
+                msg: to_binary(&msg).unwrap(),
+            }));
+
+        let balance = res.unwrap();
 
         assert_eq!(balance.balance, expected_amount);
     }
@@ -119,12 +121,12 @@ mod tests {
             coffee_shop_key: shop_key.clone(),
             id,
         };
-        let res: PriceResponse = router
+        let res: Uint128 = router
             .wrap()
             .query_wasm_smart(&contract.clone(), &price_query)
             .unwrap();
 
-        assert_eq!(res.price, price);
+        assert_eq!(res, price);
     }
 
     #[test]
@@ -147,7 +149,7 @@ mod tests {
             }),
             marketing: None,
         };
-        let cw20_addr = router
+        let token_addr = router
             .instantiate_contract(
                 cw20_token_id,
                 owner.clone(),
@@ -162,11 +164,11 @@ mod tests {
         let amount = Uint128::from(u128::pow(10, 6));
 
         // mint tokens for Alice
-        mint_some_token(&mut router, owner.clone(), cw20_addr.clone(), ALICE, amount);
+        mint_some_token(&mut router, owner.clone(), token_addr.clone(), String::from(ALICE), amount);
         check_balance(
             &mut router,
             alice_address.clone(),
-            cw20_addr.clone(),
+            token_addr.clone(),
             amount,
         );
 
@@ -177,7 +179,7 @@ mod tests {
         let coffee_cup_id = Uint128::new(1);
 
         let msg = InstantiateMsg {
-            token_addr: cw20_addr.clone(),
+            token_addr: token_addr.clone(),
             shop_key: shop_key.clone(),
         };
         let coffee_swap_addr = router
@@ -270,7 +272,7 @@ mod tests {
             &mut router,
             alice_address.clone(),
             coffee_swap_addr.clone(),
-            cw20_addr.clone(),
+            token_addr.clone(),
             allowed_spend_amount,
         );
 

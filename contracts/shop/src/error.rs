@@ -23,26 +23,3 @@ pub enum ContractError {
     #[error("NotAnError")]
     NotAnError {},
 }
-
-impl From<cw20_base::ContractError> for ContractError {
-    fn from(err: cw20_base::ContractError) -> Self {
-        match err {
-            cw20_base::ContractError::Std(error) => ContractError::Std(error),
-            cw20_base::ContractError::Unauthorized {} => ContractError::Unauthorized {},
-            cw20_base::ContractError::NoAllowance {} => ContractError::NoAllowance {},
-            cw20_base::ContractError::InvalidZeroAmount {} => ContractError::InvalidParam {},
-
-            cw20_base::ContractError::CannotSetOwnAccount {}
-            | cw20_base::ContractError::Expired {}
-            | cw20_base::ContractError::CannotExceedCap {}
-
-            // This should never happen, as this contract doesn't use logo
-            | cw20_base::ContractError::LogoTooBig {}
-            | cw20_base::ContractError::InvalidPngHeader {}
-            | cw20_base::ContractError::InvalidXmlPreamble {} => {
-                // ContractError::Std(StdError::generic_err(err.to_string()))
-                ContractError::InternalError {}
-            }
-        }
-    }
-}
