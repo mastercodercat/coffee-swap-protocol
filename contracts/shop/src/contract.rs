@@ -198,8 +198,6 @@ pub fn buy_coffee(
         return Err(ContractError::InvalidParam {});
     }
 
-    let coffee_state = COFFEE_STATE.load(deps.storage, coffee_shop_key.clone())?;
-
     let cup_price = coffee_state.menu[_id - 1].price;
 
     // check is enough ingredients for order
